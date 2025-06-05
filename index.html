@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stretch Timer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#800080">
+  <style>
+    :root {
+      --primary-color: #800080;
+      --primary-light: #a64da6;
+      --primary-dark: #660066;
+      --text-color: #fff;
+      --container-bg: rgba(255, 255, 255, 0.08);
+    }
+    html, body {
+      min-height: 100vh;
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #1a0022 0%, #2c003e 70%, #800080 100%);
+      color: var(--text-color);
+      font-family: 'Montserrat', sans-serif;
+      overflow-x: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    main {
+      min-height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 0;
+      gap: 20px;
+    }
+    header {
+      margin-top: 2vh;
+      text-align: center;
+    }
+    h1 {
+      font-size: clamp(1.4rem, 6vw, 2.3rem);
+      margin-bottom: 18px;
+      letter-spacing: 2px;
+    }
+    .timer-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 18px;
+      width: 100vw;
+      max-width: 600px;
+    }
+    .timer-container {
+      position: relative;
+      width: 98vw;
+      max-width: 450px;
+      aspect-ratio: 1 / 1;
+      margin-bottom: 18px;
+      min-width: 180px;
+    }
+    .timer-container svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      transform: rotate(-90deg);
+      user-select: none;
+      touch-action: none;
+    }
+    #progressCircle {
+      stroke: var(--primary-light);
+      stroke-width: 36;
+      fill: transparent;
+      transition: stroke-dashoffset 0.25s linear;
+    }
+    #countdown {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transform-origin: center;
+      font-size: clamp(2rem, 16vw, 7rem);
+      font-weight: bold;
+      transition: transform 0.2s ease;
+      letter-spacing: 2px;
+      text-align: center;
+      width: 98%;
+      word-break: break-word;
+      user-select: none;
+      pointer-events: none;
+      line-height: 1.05;
+    }
+    @keyframes throb {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.1); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+    .throb { animation: throb 1s ease; }
+    .session-progress-container {
+      width: 100%;
+      max-width: 450px;
+      background: #4b0082;
+      height: clamp(22px, 8vw, 68px);
+      overflow: hidden;
+      margin-bottom: 14px;
+      position: relative;
+      border-radius: 13px;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s cubic-bezier(.7,0,.35,1.1);
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 2;
+      background: linear-gradient(135deg, #a64da6 80%, #fff6 100%);
+      box-shadow: 0 0 18px 4px #fff7, 0 0 12px 3px #ffd70055, 0 0 7px 2px #a64da6a0;
+      border-radius: 0;
+    }
+    #barTwinkleContainer {
+      pointer-events: none;
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      z-index: 3;
+    }
+    .twinkle-star {
+      position: absolute;
+      width: 18px; height: 18px;
+      opacity: 0;
+      pointer-events: none;
+      filter: drop-shadow(0 0 5px #fffadf) drop-shadow(0 0 2px #fffacd);
+      transition: opacity 0.38s cubic-bezier(.75,0,.5,1.6), transform 0.8s;
+      will-change: opacity, transform;
+    }
+    .twinkle-star svg {
+      width: 100%; height: 100%;
+      display: block;
+    }
+    #switchMsg {
+      font-size: clamp(1.2rem, 6vw, 2.8rem);
+      font-weight: 800;
+      color: #ffd700;
+      text-shadow: 1px 2px 22px #800080a0,0 0 30px #fff, 2px 2px 0 #000;
+      background: rgba(0,0,0,0.20);
+      border-radius: 16px;
+      padding: 12px 22px;
+      text-align: center;
+      margin-bottom: 24px;
+      margin-top: 6px;
+      display: none;
+      transition: opacity 0.3s;
+      letter-spacing: 0.03em;
+      box-shadow: 0 0 8px 3px #fff2;
+    }
+    #sessionPercentage {
+      font-weight: bold;
+      margin-bottom: 18px;
+      text-align: center;
+      letter-spacing: 1px;
+      font-size: clamp(0.8rem, 5vw, 2.9rem);
+      word-break: break-word;
+    }
+    .controls {
+      display: flex;
+      flex-direction: row;
+      gap: 14px;
+      justify-content: center;
+      align-items: center;
+      max-width: 430px;
+      width: 100%;
+      margin: 18px auto 8px auto;
+    }
+    .controls button {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      padding: clamp(8px, 3vw, 20px) 0;
+      font-size: clamp(1rem, 3.5vw, 1.25rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+      border: none;
+      border-radius: 14px;
+      color: var(--text-color);
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.18);
+      letter-spacing:1px;
+      transition: transform 0.2s, background 0.28s, color 0.18s;
+      margin: 0;
+      display: block;
+      outline: none;
+      user-select: none;
+    }
+    .controls button:active { transform: scale(0.98);}
+    .controls button:hover {
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+    }
+    .controls button.stop-active {
+      background: linear-gradient(135deg, #d72631, #ff2222);
+      color: #fff;
+    }
+    @media (max-width: 600px) {
+      .timer-section { margin-bottom: 8px; }
+      .session-progress-container { margin-bottom: 8px;}
+      .controls { flex-direction: column; gap: 7px; max-width: 99vw;}
+    }
+    .settings-presets-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      width: 100%;
+      margin-bottom: 10px;
+      transition: opacity 0.5s, transform 0.5s;
+    }
+    .settings-presets-container.hide {
+      opacity: 0;
+      transform: translateY(-40px) scale(0.99);
+      pointer-events: none;
+      filter: blur(3px);
+      transition: opacity 0.4s, transform 0.5s, filter 0.5s;
+    }
+    .settings, .presets-container {
+      width: 100%;
+      max-width: 320px;
+      text-align: center;
+      background: var(--container-bg);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.18);
+    }
+    .settings h2, .presets-container h2 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    .slider-group {
+      margin: 9px 0;
+      text-align: left;
+    }
+    .slider-group label {
+      display: block;
+      margin-bottom: 3px;
+      font-weight: bold;
+      font-size: 0.95rem;
+    }
+    .slider-group input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #dda0dd;
+      height: 24px;
+      background: transparent;
+      touch-action: pan-x;
+    }
+    .settings button {
+      margin-top: 8px;
+      padding: 7px 11px;
+      font-size: 1rem;
+      background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+      border: none;
+      border-radius: 10px;
+      color: var(--text-color);
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.18);
+      transition: transform 0.2s, background 0.3s;
+    }
+    .settings button:hover {
+      transform: scale(1.03);
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+    }
+    .presets-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .preset-btn {
+      padding: 8px;
+      font-size: 1rem;
+      background: linear-gradient(135deg, #6a0dad, #800080);
+      border: none;
+      border-radius: 10px;
+      color: var(--text-color);
+      cursor: pointer;
+      transition: transform 0.2s, background 0.3s;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.14);
+    }
+    .preset-btn:hover {
+      transform: scale(1.03);
+      background: linear-gradient(135deg, #800080, #a64ca6);
+    }
+    #confettiMsg {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10000;
+      color: #fff;
+      font-size: clamp(1.2rem, 7vw, 5vw);
+      font-family: 'Montserrat',sans-serif;
+      text-shadow: 4px 8px 38px #800080,0 0 30px #fff, 0 0 20px #00f, 2px 2px 0 #000;
+      background: rgba(30, 0, 40, 0.84);
+      border-radius: 36px;
+      padding: 2vw 5vw;
+      display: none;
+      text-align: center;
+      white-space: pre-line;
+      font-weight: 900;
+      line-height: 1.09;
+      pointer-events: none;
+      letter-spacing: 0.06em;
+      max-width: 98vw;
+      word-break: break-word;
+      box-shadow: 0 0 32px 12px #24004090;
+    }
+    .emoji-drop {
+      position: fixed; left: 0; pointer-events: none; z-index: 10002;
+      font-size: 2.3rem; filter: drop-shadow(0 0 6px #fff) drop-shadow(0 0 10px #f0f);
+      user-select: none; will-change: transform;
+      animation: emojiFall 2.5s linear forwards;
+    }
+    @keyframes emojiFall {
+      0% { transform: translateY(-15vh) scale(1) rotate(0deg);}
+      100% { transform: translateY(110vh) scale(1.13) rotate(360deg);}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Stretch Timer</h1>
+  </header>
+  <main>
+    <section class="timer-section" aria-label="Timer display">
+      <div class="timer-container">
+        <svg width="100%" height="100%" viewBox="0 0 450 450">
+          <circle id="progressCircle" stroke="#dda0dd" fill="transparent" r="200" cx="225" cy="225"></circle>
+        </svg>
+        <div id="countdown" aria-live="polite" aria-atomic="true">00</div>
+      </div>
+      <div class="session-progress-container" aria-hidden="true">
+        <div class="progress-bar" id="sessionBar"></div>
+        <div id="barTwinkleContainer"></div>
+      </div>
+      <div id="sessionPercentage" aria-label="Workout progress percentage">0% Complete</div>
+      <div id="switchMsg"></div>
+    </section>
+    <div class="controls" aria-label="Timer controls">
+      <button id="startBtn">▶ Start</button>
+      <button id="pauseBtn" disabled>⏸ Pause</button>
+      <button id="resetBtn" disabled>↻ Reset</button>
+    </div>
+    <div class="settings-presets-container" id="settingsPresets">
+      <div class="settings" aria-label="Timer settings">
+        <h2>Timer Settings</h2>
+        <div class="slider-group">
+          <label for="stretchSlider">Stretch (sec): <span id="stretchValue">50</span></label>
+          <input type="range" id="stretchSlider" min="1" max="120" value="50">
+        </div>
+        <div class="slider-group">
+          <label for="switchSlider">Switch (sec): <span id="switchValue">10</span></label>
+          <input type="range" id="switchSlider" min="1" max="60" value="10">
+        </div>
+        <div class="slider-group">
+          <label for="totalWorkoutSlider">Total Workout (min): <span id="totalWorkoutValue">20</span></label>
+          <input type="range" id="totalWorkoutSlider" min="1" max="60" value="20">
+        </div>
+        <button id="saveSettings">Save Settings</button>
+      </div>
+      <div class="presets-container" aria-label="Quick presets">
+        <h2>Quick Presets</h2>
+        <div class="presets-grid">
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="10">Quick (10 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="15">Classic (15 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="20">Long (20 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="30">Deep (30 min)</button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <canvas id="confettiCanvas" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;display:none;"></canvas>
+  <div id="confettiMsg"></div>
+  <script>
+    // =======================
+    // MOBILE-OPTIMIZED BEEPS
+    // =======================
+    let audioCtx = null;
+    function unlockAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Play a silent sound to "unlock" iOS
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        gainNode.gain.value = 0.0001;
+        oscillator.start(0);
+        oscillator.stop(audioCtx.currentTime + 0.05);
+      }
+    }
+    function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
+      if (!audioCtx) return;
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.frequency.value = frequency;
+      oscillator.type = type;
+      gainNode.gain.value = volume;
+      oscillator.start();
+      setTimeout(() => { oscillator.stop(); }, duration);
+    }
+    function beepShort() { playBeep(100, 800, 0.42); }
+    function beepLong() { playBeep(490, 380, 0.34); }
+
+    // Twinkles - same as before
+    const twinkleCount = 14;
+    const twinkleContainer = document.getElementById('barTwinkleContainer');
+    let twinkleStars = [];
+    function createTwinkles() {
+      twinkleContainer.innerHTML = '';
+      twinkleStars = [];
+      for (let i = 0; i < twinkleCount; i++) {
+        const star = document.createElement('div');
+        star.className = 'twinkle-star';
+        star.innerHTML = `
+          <svg viewBox="0 0 18 18">
+            <polygon points="9,1 11,7 17,7 12,11 14,17 9,13.5 4,17 6,11 1,7 7,7"
+              fill="white" opacity="0.98"/>
+          </svg>
+        `;
+        twinkleContainer.appendChild(star);
+        twinkleStars.push(star);
+        scheduleTwinkle(star, i);
+      }
+    }
+    function scheduleTwinkle(star, idx) {
+      const bar = document.querySelector('.progress-bar');
+      if (!bar) return;
+      function twinkle() {
+        const containerRect = twinkleContainer.getBoundingClientRect();
+        const percent = parseFloat(bar.style.width) || 0;
+        if (percent < 2) {
+          star.style.opacity = 0;
+          setTimeout(twinkle, 500);
+          return;
+        }
+        const left = Math.random() * (percent/100) * containerRect.width - 9;
+        const top = Math.random() * (containerRect.height - 12) + 1;
+        star.style.left = `${Math.max(0, left)}px`;
+        star.style.top = `${top}px`;
+        star.style.transform = `scale(${0.7 + Math.random()*1.1}) rotate(${Math.floor(Math.random()*360)}deg)`;
+        star.style.transition = "opacity 0.34s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
+        star.style.opacity = 1;
+        const duration = 300 + Math.random()*650;
+        setTimeout(() => {
+          star.style.transition = "opacity 0.52s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
+          star.style.opacity = 0;
+          setTimeout(twinkle, 380 + Math.random()*700);
+        }, duration);
+      }
+      setTimeout(twinkle, idx * 140 + Math.random()*150);
+    }
+    createTwinkles();
+
+    // Timer Logic
+    const countdownEl = document.getElementById('countdown');
+    const progressCircle = document.getElementById('progressCircle');
+    const stretchSlider = document.getElementById('stretchSlider');
+    const switchSlider = document.getElementById('switchSlider');
+    const totalWorkoutSlider = document.getElementById('totalWorkoutSlider');
+    const stretchValueEl = document.getElementById('stretchValue');
+    const switchValueEl = document.getElementById('switchValue');
+    const totalWorkoutValueEl = document.getElementById('totalWorkoutValue');
+    const saveSettingsBtn = document.getElementById('saveSettings');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const sessionBar = document.getElementById('sessionBar');
+    const sessionPercentage = document.getElementById('sessionPercentage');
+    const presetButtons = document.querySelectorAll('.preset-btn');
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const confettiMsg = document.getElementById('confettiMsg');
+    const settingsPresets = document.getElementById('settingsPresets');
+    const switchMsg = document.getElementById('switchMsg');
+
+    stretchValueEl.textContent = stretchSlider.value;
+    switchValueEl.textContent = switchSlider.value;
+    totalWorkoutValueEl.textContent = totalWorkoutSlider.value;
+
+    const radius = progressCircle.r.baseVal.value;
+    const circumference = 2 * Math.PI * radius;
+    progressCircle.style.strokeDasharray = circumference;
+    progressCircle.style.strokeDashoffset = circumference;
+
+    let stretchDuration, switchDuration, totalWorkoutTime;
+    let sessionStartTime = 0, sessionEndTime = 0, currentIntervalEndTime = 0;
+    let currentMode = 'stretch';
+    let timerInterval = null, paused = false, pausedData = {};
+    let lastBeepSecond = null, lastDisplayedSecond = null, stopped = false;
+    let lastIntervalMode = null;
+    let timerRunning = false;
+    let isFirstSwitch = true;
+
+    function pad(num) { return num < 10 ? "0" + num : num; }
+
+    stretchSlider.addEventListener('input', () => { stretchValueEl.textContent = stretchSlider.value; });
+    switchSlider.addEventListener('input', () => { switchValueEl.textContent = switchSlider.value; });
+    totalWorkoutSlider.addEventListener('input', () => { totalWorkoutValueEl.textContent = totalWorkoutSlider.value; });
+
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        stretchSlider.value = btn.getAttribute('data-stretch');
+        switchSlider.value = btn.getAttribute('data-switch');
+        totalWorkoutSlider.value = btn.getAttribute('data-workout');
+        stretchValueEl.textContent = stretchSlider.value;
+        switchValueEl.textContent = switchSlider.value;
+        totalWorkoutValueEl.textContent = totalWorkoutSlider.value;
+      });
+    });
+
+    function loadSettings() {
+      const saved = localStorage.getItem('stretchTimerSettings');
+      if (saved) {
+        const s = JSON.parse(saved);
+        stretchSlider.value = s.stretch;
+        switchSlider.value = s.switch;
+        totalWorkoutSlider.value = s.totalWorkout;
+        stretchValueEl.textContent = stretchSlider.value;
+        switchValueEl.textContent = switchSlider.value;
+        totalWorkoutValueEl.textContent = totalWorkoutSlider.value;
+      }
+    }
+    function saveSettings() {
+      const s = {
+        stretch: parseInt(stretchSlider.value),
+        switch: parseInt(switchSlider.value),
+        totalWorkout: parseInt(totalWorkoutSlider.value)
+      };
+      localStorage.setItem('stretchTimerSettings', JSON.stringify(s));
+      alert('Settings saved!');
+    }
+    saveSettingsBtn.addEventListener('click', saveSettings);
+    loadSettings();
+
+    function updateCircle(fraction, snap = false) {
+      if (fraction >= 1) {
+        progressCircle.style.strokeDashoffset = 0;
+      } else if (fraction <= 0) {
+        progressCircle.style.strokeDashoffset = circumference;
+      } else {
+        progressCircle.style.strokeDashoffset = circumference * (1 - fraction);
+      }
+      if (snap) {
+        progressCircle.style.transition = "none";
+        progressCircle.getBoundingClientRect();
+        progressCircle.style.transition = "stroke-dashoffset 0.25s linear";
+      }
+    }
+
+    function startTimer() {
+      unlockAudio();
+      stretchDuration = parseInt(stretchSlider.value);
+      switchDuration = parseInt(switchSlider.value);
+      totalWorkoutTime = parseInt(totalWorkoutSlider.value) * 60;
+      currentMode = 'switch';
+      lastIntervalMode = null;
+      const now = Date.now();
+      sessionStartTime = now;
+      sessionEndTime = now + totalWorkoutTime * 1000;
+      currentIntervalEndTime = now + switchDuration * 1000;
+      lastBeepSecond = null;
+      lastDisplayedSecond = null;
+      paused = false;
+      stopped = false;
+      timerRunning = true;
+      isFirstSwitch = true;
+      settingsPresets.classList.add("hide");
+
+      startBtn.textContent = "■ Stop";
+      startBtn.classList.add("stop-active");
+      startBtn.disabled = false;
+      pauseBtn.disabled = false;
+      resetBtn.disabled = false;
+
+      updateCircle(0, true);
+      timerInterval = requestAnimationFrame(updateTimerRAF);
+    }
+
+    function updateTimerRAF() {
+      if (stopped) { finishSession(); return; }
+      const now = Date.now();
+      const elapsed = now - sessionStartTime;
+      const totalSessionDuration = sessionEndTime - sessionStartTime;
+      let progressPercent = (elapsed / totalSessionDuration) * 100;
+      progressPercent = Math.min(progressPercent, 100);
+      sessionBar.style.width = progressPercent + '%';
+      sessionPercentage.textContent = Math.floor(progressPercent) + '% Complete';
+
+      if (now >= sessionEndTime) { finishSession(); return; }
+
+      let remaining = (currentIntervalEndTime - now) / 1000;
+      if (remaining < 0) remaining = 0;
+      const currentSecond = Math.ceil(remaining);
+      countdownEl.textContent = pad(currentSecond);
+
+      // Show/hide switch message
+      if (currentMode === "switch") {
+        switchMsg.style.display = "block";
+        if (isFirstSwitch) {
+          switchMsg.textContent = "Get ready!";
+        } else {
+          switchMsg.textContent = "Switch to the next position!";
+        }
+      } else {
+        switchMsg.style.display = "none";
+      }
+
+      if (currentSecond <= 3 && currentSecond > 0 && currentSecond !== lastDisplayedSecond) {
+        countdownEl.classList.remove("throb");
+        void countdownEl.offsetWidth;
+        countdownEl.classList.add("throb");
+        lastDisplayedSecond = currentSecond;
+      } else if (currentSecond > 3) {
+        lastDisplayedSecond = currentSecond;
+        countdownEl.classList.remove("throb");
+      }
+
+      const totalInterval = (currentMode === 'stretch') ? stretchDuration : switchDuration;
+      let fraction = 1 - (remaining / totalInterval);
+      if (fraction < 0) fraction = 0;
+      if (fraction > 1) fraction = 1;
+
+      if (currentMode !== lastIntervalMode) {
+        updateCircle(0, true); // Instantly reset
+        lastIntervalMode = currentMode;
+      } else {
+        updateCircle(fraction);
+      }
+
+      if (currentSecond <= 3 && currentSecond !== lastBeepSecond && currentSecond > 0) {
+        lastBeepSecond = currentSecond;
+        beepShort();
+      }
+
+      if (remaining === 0) {
+        beepLong();
+        if (currentMode === 'switch') {
+          isFirstSwitch = false;
+        }
+        currentMode = (currentMode === 'stretch') ? 'switch' : 'stretch';
+        lastIntervalMode = null;
+        lastBeepSecond = null;
+        lastDisplayedSecond = null;
+        const nextDuration = (currentMode === 'stretch') ? stretchDuration : switchDuration;
+        currentIntervalEndTime = now + nextDuration * 1000;
+      }
+
+      timerInterval = requestAnimationFrame(updateTimerRAF);
+    }
+
+    function finishSession() {
+      countdownEl.textContent = "Done!";
+      updateCircle(1, true);
+      progressCircle.style.strokeDashoffset = 0;
+      countdownEl.classList.remove("throb");
+      cancelAnimationFrame(timerInterval);
+      beepLong();
+      pauseBtn.disabled = true;
+      startBtn.textContent = "▶ Start";
+      startBtn.classList.remove("stop-active");
+      stopped = false;
+      timerRunning = false;
+      settingsPresets.classList.remove("hide");
+      switchMsg.style.display = "none";
+      launchConfetti();
+      emojiRain();
+    }
+
+    function pauseTimer() {
+      if (!paused) {
+        pausedData = {
+          remainingInterval: currentIntervalEndTime - Date.now(),
+          remainingSession: sessionEndTime - Date.now(),
+          mode: currentMode,
+          sessionElapsed: Date.now() - sessionStartTime
+        };
+        cancelAnimationFrame(timerInterval);
+        paused = true;
+        pauseBtn.textContent = "⏸ Resume";
+      } else {
+        const now = Date.now();
+        currentIntervalEndTime = now + pausedData.remainingInterval;
+        sessionStartTime = now - pausedData.sessionElapsed;
+        sessionEndTime = now + pausedData.remainingSession;
+        currentMode = pausedData.mode;
+        paused = false;
+        pauseBtn.textContent = "⏸ Pause";
+        timerInterval = requestAnimationFrame(updateTimerRAF);
+      }
+    }
+
+    function resetTimer() {
+      cancelAnimationFrame(timerInterval);
+      countdownEl.textContent = "00";
+      updateCircle(0, true);
+      sessionBar.style.width = '0%';
+      sessionPercentage.textContent = '0% Complete';
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      resetBtn.disabled = true;
+      pauseBtn.textContent = "⏸ Pause";
+      countdownEl.classList.remove("throb");
+      paused = false;
+      startBtn.textContent = "▶ Start";
+      startBtn.classList.remove("stop-active");
+      stopped = false;
+      timerRunning = false;
+      settingsPresets.classList.remove("hide");
+      switchMsg.style.display = "none";
+      isFirstSwitch = true;
+    }
+
+    startBtn.onclick = function() {
+      if(startBtn.textContent.includes("Start")) startTimer();
+      else { stopped = true; }
+    };
+    pauseBtn.onclick = pauseTimer;
+    resetBtn.onclick = resetTimer;
+
+    // Confetti/music/emoji unchanged...
+    function launchConfetti() {
+      const colors = [
+        "#f72585","#b5179e","#7209b7","#560bad","#480ca8","#4361ee","#4cc9f0","#ffbe0b",
+        "#fb5607","#ff006e","#8338ec","#3a86ff","#3cff00","#00ff99","#ffd700","#ffffff",
+        "#39ff14","#ff1493","#00cfff","#fffc00","#ff5e00","#fe019a","#ffb300","#c6ff00",
+        "#a020f0","#adff2f","#ed2939","#d72631","#faff00","#ffa600","#d0f400","#f900bf",
+        "#f4a259","#43bccd","#fcf6b1","#fa8334","#20bf55","#9f86c0"
+      ];
+      const messages = [
+        "You Did It!\n🏆 Stretch Complete! 🏆",
+        "Victory!\nYou're a Flexibility Overlord!",
+        "LEGENDARY.\nNo one stretches like you.",
+        "Stretch Goal: ACHIEVED",
+        "Unstoppable!\nNow go brag.",
+        "You crushed it!\nOn to world domination.",
+        "One small stretch for you, one giant leap for mankind.",
+        "💪 FLEX LEVEL: GOD 💪",
+        "Are you secretly Gumby?\nBecause DAMN.",
+        "If stretching were an Olympic sport,\nyou’d already have gold.",
+        "You survived. The timer did not.",
+        "This timer was no match for your hamstrings.",
+        "You stretched further than my patience for corporate jargon.",
+        "Flex-ecution achieved. Consider the timer dominated.",
+        "Michelangelo would have sculpted you instead.",
+        "Elasticity: Level Over 9000.",
+        "Mobility so smooth, oil companies are jealous.",
+        "Bruce Lee called. He wants his flexibility back.",
+        "Chuck Norris now warms up to *your* videos.",
+        "Are you even human? Or just a yoga deity?",
+        "You’re basically a bendy straw with abs.",
+        "Certified Stretch Legend. Brag accordingly.",
+        "Did someone order a full-body victory dance?",
+        "Your muscles filed for divorce from tightness.",
+        "The Matrix is calling. They want their Neo back.",
+        "Most flexible on the block. Block confirmed.",
+        "Game. Set. Stretch. Winner: You."
+      ];
+      confettiMsg.textContent = messages[Math.floor(Math.random()*messages.length)];
+      confettiMsg.style.display = 'block';
+      const ctx = confettiCanvas.getContext('2d');
+      confettiCanvas.width = window.innerWidth * 2;
+      confettiCanvas.height = window.innerHeight * 2;
+      ctx.setTransform(2,0,0,2,0,0);
+      confettiCanvas.style.display = 'block';
+      const cx = window.innerWidth/2, cy = window.innerHeight/2;
+      const confettiCount = 1200;
+      const shapes = ['ellipse','rect','triangle'], confetti = [];
+      for(let i=0;i<confettiCount;i++){
+        const angle = Math.random()*Math.PI*2, velocity = 12+Math.random()*19;
+        confetti.push({
+          x: cx, y: cy, r: 7+Math.random()*13,
+          color: colors[Math.floor(Math.random()*colors.length)],
+          tilt: Math.random()*Math.PI*2, tiltSpeed: (Math.random()-0.5)*0.15,
+          vx: Math.cos(angle)*velocity, vy: Math.sin(angle)*velocity,
+          gravity: 0.14+Math.random()*0.17,
+          shape: shapes[Math.floor(Math.random()*shapes.length)],
+          rotation: Math.random()*360, rotSpeed: (Math.random()-0.5)*9
+        });
+      }
+      let frame = 0, maxFrames = 420;
+      function draw() {
+        ctx.clearRect(0,0,confettiCanvas.width,confettiCanvas.height);
+        for(const c of confetti) {
+          ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.tilt);
+          ctx.globalAlpha = Math.max(0, 1-frame/maxFrames);
+          if(c.shape==='ellipse'){
+            ctx.beginPath();
+            ctx.ellipse(0,0,c.r,c.r*0.45,0,0,2*Math.PI);
+            ctx.fillStyle=c.color; ctx.fill();
+          } else if(c.shape==='rect'){
+            ctx.rotate(c.rotation * Math.PI / 180);
+            ctx.fillStyle=c.color;
+            ctx.fillRect(-c.r/2,-c.r/6,c.r, c.r/3);
+          } else if(c.shape==='triangle'){
+            ctx.beginPath();
+            ctx.moveTo(0,-c.r/2); ctx.lineTo(-c.r/2,c.r/2); ctx.lineTo(c.r/2,c.r/2);
+            ctx.closePath(); ctx.fillStyle=c.color; ctx.fill();
+          }
+          ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+      }
+      function update() {
+        for(const c of confetti){
+          c.x += c.vx; c.y += c.vy;
+          c.vy += c.gravity; c.vx *= 0.985; c.vy *= 0.985;
+          c.tilt += c.tiltSpeed; c.rotation += c.rotSpeed;
+          if(Math.random()<0.04) c.vx += (Math.random()-0.5)*1.4;
+        }
+        frame++;
+      }
+      function animate() {
+        update(); draw();
+        if(frame < maxFrames) requestAnimationFrame(animate);
+        else setTimeout(()=>{
+          confettiCanvas.style.display='none'; confettiMsg.style.display='none';
+        }, 2300);
+      }
+      celebrationMusic();
+      animate();
+    }
+    function celebrationMusic(){
+      if (!audioCtx) return;
+      let t = audioCtx.currentTime, baseVol = 0.22;
+      const tunes = [
+        [
+          [523,0,0.14],[659,0.15,0.24],[784,0.25,0.32],[1047,0.33,0.45]
+        ],
+        [
+          [440,0,0.12],[587,0.13,0.2],[740,0.21,0.26],[880,0.27,0.38]
+        ],
+        [
+          [659,0,0.10],[784,0.10,0.19],[988,0.20,0.29],[1318,0.30,0.37],[1047,0.38,0.45]
+        ]
+      ];
+      const tune = tunes[Math.floor(Math.random() * tunes.length)];
+      tune.forEach(([freq, start, end], i) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        g.gain.value = baseVol * (1.1 - 0.11 * i);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t + start);
+        o.stop(t + end);
+        g.gain.setValueAtTime(g.gain.value, t + start);
+        g.gain.linearRampToValueAtTime(0.001, t + end);
+      });
+      setTimeout(() => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(1568, audioCtx.currentTime);
+        o.frequency.linearRampToValueAtTime(220, audioCtx.currentTime + 0.21);
+        g.gain.value = baseVol * 1.7;
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start();
+        o.stop(audioCtx.currentTime + 0.21);
+        g.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.21);
+      }, (tune[tune.length-1][2] * 1000) + 20);
+    }
+    function emojiRain() {
+      const emojis = ['✨','🎉','💜','💪','👑','😎'];
+      let n = 22 + Math.floor(Math.random()*7);
+      for(let i=0;i<n;i++) {
+        setTimeout(()=>{
+          let e = document.createElement('div');
+          e.className = 'emoji-drop';
+          e.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+          e.style.left = (5 + Math.random()*90) + 'vw';
+          e.style.top = '-6vh';
+          e.style.fontSize = (2.5 + Math.random()*2.7) + 'rem';
+          document.body.appendChild(e);
+          setTimeout(()=>e.remove(), 3000);
+        }, Math.random()*1500);
+      }
+    }
+  </script>
+</body>
+</html>
