@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 👈 This is the magic line
 
       - name: Push to Hugging Face Space
         env:
