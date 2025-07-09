@@ -15,18 +15,27 @@ function unlockAudio() {
     oscillator.stop(audioCtx.currentTime + 0.05);
   }
 }
-function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
+async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
   if (!audioCtx) return;
+
+  // 🍎 iOS 17+ may leave the context suspended; resume it on every beep.
+  if (audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); }
+    catch (e) { console.warn('AudioContext resume failed:', e); }
+  }
+
   const oscillator = audioCtx.createOscillator();
-  const gainNode = audioCtx.createGain();
+  const gainNode  = audioCtx.createGain();
   oscillator.connect(gainNode);
   gainNode.connect(audioCtx.destination);
   oscillator.frequency.value = frequency;
-  oscillator.type = type;
+  oscillator.type  = type;
   gainNode.gain.value = volume;
+
   oscillator.start();
-  setTimeout(() => { oscillator.stop(); }, duration);
+  setTimeout(() => oscillator.stop(), duration);
 }
+
 function beepShort() { playBeep(100, 800, 0.42); }
 function beepLong() { playBeep(490, 380, 0.34); }
 
@@ -648,3 +657,8 @@ function emojiRain() {
     }, Math.random()*1500); // Stagger start times
   }
 }
+document.addEventListener('visibilitychange', () => {
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(()=>{/* ignore */});
+  }
+});
