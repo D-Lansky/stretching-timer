@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stretch Timer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#800080">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Stretch Timer</h1>
+  </header>
+  <main>
+    <section class="timer-section" aria-label="Timer display">
+      <div class="timer-container">
+        <svg width="100%" height="100%" viewBox="0 0 450 450">
+          <circle id="progressCircle" stroke="#dda0dd" fill="transparent" r="200" cx="225" cy="225"></circle>
+        </svg>
+        <div id="countdown" aria-live="polite" aria-atomic="true">00</div>
+      </div>
+      <div class="session-progress-container" aria-hidden="true">
+        <div class="progress-bar" id="sessionBar"></div>
+        <div id="barTwinkleContainer"></div>
+      </div>
+      <div id="sessionPercentage" aria-label="Workout progress percentage">0% Complete</div>
+       <div id="switchMsg" aria-live="polite"></div>
+    </section>
+    <div class="controls" aria-label="Timer controls">
+      <button id="startBtn">▶ Start</button>
+      <button id="pauseBtn" disabled>⏸ Pause</button>
+      <button id="resetBtn" disabled>↻ Reset</button>
+    </div>
+    <div class="settings-presets-container" id="settingsPresets">
+      <div class="settings" aria-label="Timer settings">
+        <h2>Timer Settings</h2>
+        <div class="slider-group">
+          <label for="stretchSlider">Stretch (sec): <span id="stretchValue">50</span></label>
+          <input type="range" id="stretchSlider" min="1" max="120" value="50">
+        </div>
+        <div class="slider-group">
+          <label for="switchSlider">Switch (sec): <span id="switchValue">10</span></label>
+          <input type="range" id="switchSlider" min="1" max="60" value="10">
+        </div>
+        <div class="slider-group">
+          <label for="totalWorkoutSlider">Total Workout (min): <span id="totalWorkoutValue">20</span></label>
+          <input type="range" id="totalWorkoutSlider" min="1" max="60" value="20">
+        </div>
+        <button id="saveSettings">Save Settings</button>
+      </div>
+      <div class="presets-container" aria-label="Quick presets">
+        <h2>Quick Presets</h2>
+        <div class="presets-grid">
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="10">Quick (10 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="15">Classic (15 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="20">Long (20 min)</button>
+          <button class="preset-btn" data-stretch="50" data-switch="10" data-workout="30">Deep (30 min)</button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <div id="toastNotification" class="toast" aria-live="assertive" aria-atomic="true">Settings Saved!</div>
+  <canvas id="confettiCanvas" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;display:none;"></canvas>
+   <div id="confettiMsg" role="status" aria-live="polite"></div>
+  <script src="script.js"></script>
+</body>
+</html>
