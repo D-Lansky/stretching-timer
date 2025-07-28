@@ -1,25 +1,38 @@
 name: Deploy to Hugging Face
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]     # adjust if you deploy from a different branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      # 1. Check out your GitHub repo (this contains the fresh code)
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 👈 This is the magic line
+          fetch-depth: 0
 
-      - name: Push to Hugging Face Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      # 2. Clone the Space repo into ./hf-space
+      - name: Clone HF Space
         run: |
-          git config --global user.name "David Lansky"
-          git config --global user.email "dlansky@gmail.com"
-          git remote add hf https://dlansky:${HF_TOKEN}@huggingface.co/spaces/DLansky/Stretching-Timer
-          git push --force hf main
+          git clone https://DLansky:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/DLansky/Stretching-Timer hf-space
+
+      # 3. Copy *all* files from your repo into that clone
+      - name: Sync files
+        run: |
+          rsync -av --delete --exclude ".git/" ./ hf-space/
+
+      # 4. Commit & push only if something changed
+      - name: Push to HF
+        run: |
+          cd hf-space
+          git config user.email "actions@github.com"
+          git config user.name  "GitHub Actions"
+          if ! git diff --quiet; then
+            git add .
+            git commit -m "Auto-deploy $GITHUB_SHA"
+            git push origin main
+          else
+            echo "No changes to deploy."
+          fi
