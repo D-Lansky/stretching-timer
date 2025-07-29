@@ -25,7 +25,6 @@ function unlockAudio() {
   gain.gain.value = 0.0001;
   osc.start(); osc.stop(audioCtx.currentTime + 0.05);
 }
-}
 async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
   if (!audioCtx) return;
 
