@@ -71,41 +71,42 @@ const toastNotificationEl = document.getElementById('toastNotification');
 // =======================
 // Timer State Object
 // =======================
-const timerApp = {
-  stretchDuration: 50,
-  switchDuration: 10,
-  totalWorkoutTime: 20 * 60, // in seconds
-  sessionStartTime: 0,
-  sessionEndTime: 0,
-  currentIntervalEndTime: 0,
-  currentMode: 'stretch', // 'stretch' or 'switch'
-  timerInterval: null,
-  paused: false,
-  pausedData: {},
-  lastBeepSecond: null,
-  lastDisplayedSecond: null,
-  stopped: false,
-  lastIntervalMode: null, // Used to detect mode changes for circle animation
-  timerRunning: false,
-  isFirstSwitch: true, // To show "Get Ready!" message
-  circumference: 0,
+class TimerApp {
+  constructor() {
+    this.stretchDuration = 50;
+    this.switchDuration = 10;
+    this.totalWorkoutTime = 20 * 60; // in seconds
+    this.sessionStartTime = 0;
+    this.sessionEndTime = 0;
+    this.currentIntervalEndTime = 0;
+    this.currentMode = 'stretch'; // 'stretch' or 'switch'
+    this.timerInterval = null;
+    this.paused = false;
+    this.pausedData = {};
+    this.lastBeepSecond = null;
+    this.lastDisplayedSecond = null;
+    this.stopped = false;
+    this.lastIntervalMode = null; // Used to detect mode changes for circle animation
+    this.timerRunning = false;
+    this.isFirstSwitch = true; // To show "Get Ready!" message
+    this.circumference = 0;
+    this.twinkleStars = [];
 
-  init() {
     this.circumference = 2 * Math.PI * progressCircle.r.baseVal.value;
     progressCircle.style.strokeDasharray = this.circumference;
     this.updateCircle(0, true); // Initialize circle to empty
     this.loadSettings();
     this.attachEventListeners();
     this.updateSliderValuesDisplay();
-    createTwinkles();
-  },
-
+    this.createTwinkles();
+  }
+  
   updateSliderValuesDisplay() {
     stretchValueEl.textContent = stretchSlider.value;
     switchValueEl.textContent = switchSlider.value;
     totalWorkoutValueEl.textContent = totalWorkoutSlider.value;
-  },
-
+  }
+  
   attachEventListeners() {
     stretchSlider.addEventListener('input', () => {
       stretchValueEl.textContent = stretchSlider.value;
@@ -133,29 +134,29 @@ const timerApp = {
       });
     });
 
-    saveSettingsBtn.addEventListener('click', () => this.saveSettings());
- // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
-startBtn.addEventListener('click', () => {
-  // 1️⃣ Create / unlock the AudioContext the very first tap
-  unlockAudio();
-
-  // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
-  if (audioCtx && audioCtx.state === 'suspended') {
-    // fire-and-forget; don't await, otherwise Safari-PWA may hang
-    audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
-  }
-
-  // 3️⃣ Original logic: Start or Stop the timer
-  if (startBtn.textContent.includes('Start')) {
-    this.startTimer();
-  } else {
-    this.stopped = true;   // handled in updateTimerRAF
-  }
-});
-
+    saveSettingsBtn.addEventListener('click', () => this.saveSettings()); 
+    // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
+    startBtn.addEventListener('click', () => {
+      // 1️⃣ Create / unlock the AudioContext the very first tap
+      unlockAudio();
+    
+      // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
+      if (audioCtx && audioCtx.state === 'suspended') {
+        // fire-and-forget; don't await, otherwise Safari-PWA may hang
+        audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+      }
+    
+      // 3️⃣ Original logic: Start or Stop the timer
+      if (startBtn.textContent.includes('Start')) {
+        this.startTimer();
+      } else {
+        this.stopped = true;   // handled in updateTimerRAF
+      }
+    });
+    
     pauseBtn.addEventListener('click', () => this.pauseTimer());
     resetBtn.addEventListener('click', () => this.resetTimer());
-  },
+  }
 
   loadSettings() {
     const saved = localStorage.getItem('stretchTimerSettings');
@@ -169,8 +170,8 @@ startBtn.addEventListener('click', () => {
       this.totalWorkoutTime = s.totalWorkout * 60;
     }
     this.updateSliderValuesDisplay(); // Ensure display matches loaded settings
-  },
-
+  }
+  
   saveSettings() {
     const s = {
       stretch: parseInt(stretchSlider.value),
@@ -186,8 +187,8 @@ startBtn.addEventListener('click', () => {
         toastNotificationEl.classList.remove('show');
       }, 3000); // Hide after 3 seconds
     }
-  },
-
+  }
+  
   updateCircle(fraction, snap = false) {
     let offset;
     if (fraction >= 1) {
@@ -204,8 +205,8 @@ startBtn.addEventListener('click', () => {
       progressCircle.getBoundingClientRect(); // Force reflow
       progressCircle.style.transition = "stroke-dashoffset 0.25s linear";
     }
-  },
-
+  }
+  
   startTimer() {
     unlockAudio();
     this.stretchDuration = parseInt(stretchSlider.value);
@@ -236,8 +237,8 @@ startBtn.addEventListener('click', () => {
     this.updateCircle(0, true);
     if (this.timerInterval) cancelAnimationFrame(this.timerInterval);
     this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
-  },
-
+  }
+  
   _updateSessionProgress(now) {
     const elapsed = now - this.sessionStartTime;
     const totalSessionDuration = this.sessionEndTime - this.sessionStartTime;
@@ -245,14 +246,14 @@ startBtn.addEventListener('click', () => {
     progressPercent = Math.min(progressPercent, 100);
     sessionBar.style.width = progressPercent + '%';
     sessionPercentage.textContent = Math.floor(progressPercent) + '% Complete';
-  },
-
+  }
+  
   _handleIntervalCountdown(now) {
     let remaining = (this.currentIntervalEndTime - now) / 1000;
     if (remaining < 0) remaining = 0;
     const currentSecond = Math.ceil(remaining);
 
-    countdownEl.textContent = pad(currentSecond);
+    countdownEl.textContent = String(currentSecond).padStart(2, '0');
 
     // Throb animation & beeps for last 3 seconds
     if (currentSecond <= 3 && currentSecond > 0) {
@@ -272,8 +273,8 @@ startBtn.addEventListener('click', () => {
       countdownEl.classList.remove("throb");
     }
     return remaining;
-  },
-
+  }
+  
   _updateSwitchMessage() {
     if (this.currentMode === "switch") {
       switchMsg.style.display = "block";
@@ -281,8 +282,8 @@ startBtn.addEventListener('click', () => {
     } else {
       switchMsg.style.display = "none";
     }
-  },
-
+  }
+  
   _updateCircularProgress(remainingSeconds) {
     const totalIntervalDuration = (this.currentMode === 'stretch') ? this.stretchDuration : this.switchDuration;
     let fraction = 1 - (remainingSeconds / totalIntervalDuration);
@@ -295,8 +296,8 @@ startBtn.addEventListener('click', () => {
     } else {
       this.updateCircle(fraction);
     }
-  },
-
+  }
+  
   _handleModeSwitch(now) {
     beepLong();
     if (this.currentMode === 'switch') {
@@ -308,8 +309,8 @@ startBtn.addEventListener('click', () => {
     this.lastDisplayedSecond = null;
     const nextDuration = (this.currentMode === 'stretch') ? this.stretchDuration : this.switchDuration;
     this.currentIntervalEndTime = now + nextDuration * 1000;
-  },
-
+  }
+  
   updateTimerRAF() {
     if (this.stopped) {
       this.finishSession();
@@ -334,8 +335,8 @@ startBtn.addEventListener('click', () => {
     if (!this.paused && this.timerRunning) {
       this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
     }
-  },
-
+  }
+  
   finishSession() {
     countdownEl.textContent = "Done!";
     this.updateCircle(1, true);
@@ -352,8 +353,8 @@ startBtn.addEventListener('click', () => {
     switchMsg.style.display = "none";
     launchConfetti();
     emojiRain();
-  },
-
+  }
+  
   pauseTimer() {
     if (!this.timerRunning) return; // Can't pause if not running
 
@@ -383,8 +384,8 @@ startBtn.addEventListener('click', () => {
       pauseBtn.textContent = "⏸ Pause";
       this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
     }
-  },
-
+  }
+  
   resetTimer() {
     if (this.timerInterval) cancelAnimationFrame(this.timerInterval);
     this.timerInterval = null;
@@ -409,76 +410,72 @@ startBtn.addEventListener('click', () => {
     this.lastIntervalMode = null;
     this.loadSettings(); // Reload settings to default or saved
   }
-};
-
-function pad(num) { return num < 10 ? "0" + num : num; }
-
-// =======================
-// Twinkle Effect
-// =======================
-const twinkleCount = 14;
-let twinkleStars = [];
-
-function createTwinkles() {
-  if (!twinkleContainer) return;
-  twinkleContainer.innerHTML = '';
-  twinkleStars = [];
-  for (let i = 0; i < twinkleCount; i++) {
-    const star = document.createElement('div');
-    star.className = 'twinkle-star';
-    star.innerHTML = `
-      <svg viewBox="0 0 18 18">
-        <polygon points="9,1 11,7 17,7 12,11 14,17 9,13.5 4,17 6,11 1,7 7,7"
-          fill="white" opacity="0.98"/>
-      </svg>
-    `;
-    twinkleContainer.appendChild(star);
-    twinkleStars.push(star);
-    scheduleTwinkle(star, i);
+  
+  // =======================
+  // Twinkle Effect
+  // =======================
+  createTwinkles() {
+    const twinkleCount = 14;
+    if (!twinkleContainer) return;
+    twinkleContainer.innerHTML = '';
+    this.twinkleStars = [];
+    for (let i = 0; i < twinkleCount; i++) {
+      const star = document.createElement('div');
+      star.className = 'twinkle-star';
+      star.innerHTML = `
+        <svg viewBox="0 0 18 18">
+          <polygon points="9,1 11,7 17,7 12,11 14,17 9,13.5 4,17 6,11 1,7 7,7"
+            fill="white" opacity="0.98"/>
+        </svg>
+      `;
+      twinkleContainer.appendChild(star);
+      this.twinkleStars.push(star);
+      this.scheduleTwinkle(star, i);
+    }
   }
-}
-
-function scheduleTwinkle(star, idx) {
-  const bar = document.querySelector('.progress-bar');
-  if (!bar || !twinkleContainer) return;
-
-  function twinkle() {
-    if (!timerApp.timerRunning || timerApp.paused) { // Stop twinkling if timer is not active
+  
+  scheduleTwinkle(star, idx) {
+    const bar = document.querySelector('.progress-bar');
+    if (!bar || !twinkleContainer) return;
+  
+    const twinkle = () => {
+      if (!this.timerRunning || this.paused) { // Stop twinkling if timer is not active
         star.style.opacity = 0;
         setTimeout(twinkle, 500); // Check again later
         return;
+      }
+      const containerRect = twinkleContainer.getBoundingClientRect();
+      const percent = parseFloat(bar.style.width) || 0;
+  
+      if (percent < 2) {
+        star.style.opacity = 0;
+        setTimeout(twinkle, 500); // Check again later
+        return;
+      }
+  
+      const left = Math.random() * (percent / 100) * containerRect.width - (star.offsetWidth / 2);
+      const top = Math.random() * (containerRect.height - star.offsetHeight);
+      star.style.left = `${Math.max(0, Math.min(left, containerRect.width - star.offsetWidth))}px`;
+      star.style.top = `${Math.max(0, Math.min(top, containerRect.height - star.offsetHeight))}px`;
+      star.style.transform = `scale(${0.7 + Math.random() * 1.1}) rotate(${Math.floor(Math.random() * 360)}deg)`;
+      star.style.transition = "opacity 0.34s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
+      star.style.opacity = 1;
+  
+      const duration = 300 + Math.random() * 650;
+      setTimeout(() => {
+        star.style.transition = "opacity 0.52s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
+        star.style.opacity = 0;
+        setTimeout(twinkle, 380 + Math.random() * 700); // Schedule next twinkle
+      }, duration);
     }
-    const containerRect = twinkleContainer.getBoundingClientRect();
-    const percent = parseFloat(bar.style.width) || 0;
-
-    if (percent < 2) {
-      star.style.opacity = 0;
-      setTimeout(twinkle, 500); // Check again later
-      return;
-    }
-
-    const left = Math.random() * (percent / 100) * containerRect.width - (star.offsetWidth / 2);
-    const top = Math.random() * (containerRect.height - star.offsetHeight);
-    star.style.left = `${Math.max(0, Math.min(left, containerRect.width - star.offsetWidth))}px`;
-    star.style.top = `${Math.max(0, Math.min(top, containerRect.height - star.offsetHeight))}px`;
-    star.style.transform = `scale(${0.7 + Math.random() * 1.1}) rotate(${Math.floor(Math.random() * 360)}deg)`;
-    star.style.transition = "opacity 0.34s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
-    star.style.opacity = 1;
-
-    const duration = 300 + Math.random() * 650;
-    setTimeout(() => {
-      star.style.transition = "opacity 0.52s cubic-bezier(.73,0,.45,1.9), transform 0.8s";
-      star.style.opacity = 0;
-      setTimeout(twinkle, 380 + Math.random() * 700); // Schedule next twinkle
-    }, duration);
+    setTimeout(twinkle, idx * 140 + Math.random() * 150); // Initial staggered start
   }
-  setTimeout(twinkle, idx * 140 + Math.random() * 150); // Initial staggered start
 }
 
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
-  timerApp.init();
+  const timerApp = new TimerApp();
 
   // Register Service Worker
   if ('serviceWorker' in navigator) {
