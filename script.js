@@ -6,36 +6,47 @@ class AudioManager {
     this.audioCtx = null;
     this.isAudioAwake = false;
     // Unlock on the very first user interaction. { once: true } cleans up the listener automatically.
-    document.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
-    document.addEventListener('click', () => this.unlockAudio(), { once: true });
+    // We remove 'once: true' to aggressively re-unlock if the context ever suspends again.
+    document.addEventListener('touchstart', () => this.unlockAudio(), { passive: true });
+    document.addEventListener('click', () => this.unlockAudio(), { passive: true });
   }
 
   unlockAudio() {
-    if (this.audioCtx && this.audioCtx.state === 'running') return;
-
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().then(() => {
-        console.log('AudioContext resumed successfully.');
-        this._keepAudioAwake();
-      }).catch(e => console.error('AudioContext resume failed:', e));
-      return;
-    }
-
-    try {
-      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      console.log(`New AudioContext created in state: ${this.audioCtx.state}`);
-      // A new context might start 'suspended' on some browsers and needs to be resumed.
-      if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume().then(() => {
-          console.log('Newly created AudioContext resumed.');
-          this._keepAudioAwake();
-        });
-      } else {
-        this._keepAudioAwake();
+    return new Promise((resolve, reject) => {
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        return resolve(true);
       }
-    } catch (e) {
-      console.error("Could not create AudioContext:", e);
-    }
+
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().then(() => {
+          console.log('AudioContext resumed successfully.');
+          this._keepAudioAwake();
+          resolve(true);
+        }).catch(e => {
+          console.error('AudioContext resume failed:', e);
+          reject(e);
+        });
+        return;
+      }
+
+      try {
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        console.log(`New AudioContext created in state: ${this.audioCtx.state}`);
+        if (this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().then(() => {
+            console.log('Newly created AudioContext resumed.');
+            this._keepAudioAwake();
+            resolve(true);
+          }).catch(e => reject(e));
+        } else {
+          this._keepAudioAwake();
+          resolve(true);
+        }
+      } catch (e) {
+        console.error("Could not create AudioContext:", e);
+        reject(e);
+      }
+    });
   }
 
   _keepAudioAwake() {
@@ -57,7 +68,7 @@ class AudioManager {
   playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
     if (!this.audioCtx || this.audioCtx.state !== 'running') {
       console.warn('Audio not ready, trying to unlock.');
-      this.unlockAudio();
+      this.unlockAudio().catch(() => {}); // Fire-and-forget attempt, main unlock is on start.
       return;
     }
     const now = this.audioCtx.currentTime;
@@ -100,15 +111,22 @@ class AudioManager {
       o.connect(g); g.connect(this.audioCtx.destination);
       o.start(t + start); o.stop(t + end);
     });
-    setTimeout(() => {
-      const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
-      o.type = 'sine'; o.frequency.setValueAtTime(1568, this.audioCtx.currentTime);
-      o.frequency.linearRampToValueAtTime(220, this.audioCtx.currentTime + 0.21);
-      g.gain.setValueAtTime(baseVol * 1.7, this.audioCtx.currentTime);
-      g.gain.linearRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.21);
-      o.connect(g); g.connect(this.audioCtx.destination);
-      o.start(); o.stop(this.audioCtx.currentTime + 0.21);
-    }, (tune[tune.length-1][2] * 1000) + 20);
+
+    // Schedule the final flourish using the Web Audio clock, not setTimeout
+    const lastNote = tune[tune.length - 1];
+    const flourishStartTime = t + lastNote[2] + 0.020; // 20ms after last note ends
+    const flourishDuration = 0.21;
+    const flourishEndTime = flourishStartTime + flourishDuration;
+
+    const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
+    o.type = 'sine';
+    o.connect(g); g.connect(this.audioCtx.destination);
+    o.frequency.setValueAtTime(1568, flourishStartTime);
+    o.frequency.linearRampToValueAtTime(220, flourishEndTime);
+    g.gain.setValueAtTime(baseVol * 1.7, flourishStartTime);
+    g.gain.linearRampToValueAtTime(0.001, flourishEndTime);
+    o.start(flourishStartTime);
+    o.stop(flourishEndTime);
   }
 }
 const audioManager = new AudioManager();
@@ -206,17 +224,16 @@ class TimerApp {
 
     saveSettingsBtn.addEventListener('click', () => this.saveSettings()); 
     // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
-    startBtn.addEventListener('click', () => {
-      // 1️⃣ Ensure audio is unlocked/resumed on this critical interaction.
-      audioManager.unlockAudio();
-    
-      // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
-      if (audioManager.audioCtx && audioManager.audioCtx.state !== 'running') {
-        // Fire-and-forget resume attempt.
-        audioManager.audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+    startBtn.addEventListener('click', async () => {
+      // 1️⃣ Wait for the audio to be unlocked before proceeding. This fixes the race condition.
+      try {
+        await audioManager.unlockAudio();
+      } catch (e) {
+        console.error("Could not start timer because audio failed to unlock.", e);
+        // We can still proceed without audio if we want, but for now we'll just log.
       }
     
-      // 3️⃣ Original logic: Start or Stop the timer
+      // 2️⃣ Original logic: Start or Stop the timer
       if (startBtn.textContent.includes('Start')) {
         this.startTimer();
       } else {
@@ -278,7 +295,6 @@ class TimerApp {
   }
   
   startTimer() {
-    audioManager.unlockAudio(); // Ensure audio is ready
     this.stretchDuration = parseInt(stretchSlider.value);
     this.switchDuration = parseInt(switchSlider.value);
     this.totalWorkoutTime = parseInt(totalWorkoutSlider.value) * 60;
