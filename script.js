@@ -3,17 +3,24 @@
 // =======================
 let audioCtx = null;
 function unlockAudio() {
+  console.log('Attempting to unlock audio...');
   // Re-use the context if it’s still running
-  if (audioCtx && audioCtx.state === 'running') return;
+  if (audioCtx && audioCtx.state === 'running') {
+    console.log('Audio context already running.');
+    return;
+  }
 
   // If the old one is 'suspended' try resuming; if it fails or is 'closed' create a new one.
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume().then(() => {
-      if (audioCtx.state === 'running') return;
+      if (audioCtx.state === 'running') {
+        console.log('Audio context successfully resumed.');
+        return;
+      }
       audioCtx = null;                 // resume failed → fall through to new ctx
-    }).catch(() => { audioCtx = null; });
+    }).catch((error) => { console.error('Audio context resume failed:', error); audioCtx = null; });
   }
-
+  
   if (!audioCtx || audioCtx.state !== 'running') {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -23,7 +30,7 @@ function unlockAudio() {
   const gain = audioCtx.createGain();
   osc.connect(gain); gain.connect(audioCtx.destination);
   gain.gain.value = 0.0001;
-  osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.03);
 }
 async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
   if (!audioCtx) return;
@@ -42,6 +49,11 @@ async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 's
 
 function beepShort() { playBeep(100, 800, 0.42); }
 function beepLong() { playBeep(490, 380, 0.34); }
+
+// Unlock audio on first touch
+document.addEventListener('touchstart', () => {
+  unlockAudio();
+});
 
 // =======================
 // DOM Element Selectors
@@ -141,7 +153,7 @@ class TimerApp {
       unlockAudio();
     
       // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
-      if (audioCtx && audioCtx.state === 'suspended') {
+      if (audioCtx && audioCtx.state !== 'running') {
         // fire-and-forget; don't await, otherwise Safari-PWA may hang
         audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
       }
@@ -476,6 +488,7 @@ class TimerApp {
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
   const timerApp = new TimerApp();
+  unlockAudio();
 
   // Register Service Worker
   if ('serviceWorker' in navigator) {
@@ -656,7 +669,7 @@ function celebrationMusic(){
 }
 function emojiRain() {
   const emojis = ['✨','🎉','💜','💪','👑','😎']; // Curated list
-  let n = 22 + Math.floor(Math.random()*7); // Random count between 22-28
+  let n = 18 + Math.floor(Math.random()*12); // Random count between 18-30
   for(let i=0;i<n;i++) {
     setTimeout(()=>{
       let e = document.createElement('div');
@@ -668,10 +681,10 @@ function emojiRain() {
       document.body.appendChild(e);
       setTimeout(()=>e.remove(), 3000); // Remove after animation
     }, Math.random()*1500); // Stagger start times
-  }
+  } 
 }
 document.addEventListener('visibilitychange', () => {
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(()=>{/* ignore */});
+    audioCtx.resume().catch((error)=>{ console.warn('AudioContext resume on visibility change failed:', error); });
   }
 });
