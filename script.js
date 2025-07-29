@@ -6,10 +6,6 @@ class AudioManager {
     this.audioCtx = null;
     this.isAudioAwake = false;
     this.unlockingPromise = null; // Handles race conditions by ensuring only one unlock op runs at a time.
-    // Unlock on the very first user interaction. `{ once: true }` is crucial to prevent
-    // race conditions with the button's own `unlockAudio` call.
-    document.addEventListener('touchstart', () => this.unlockAudio(), { once: true, passive: true });
-    document.addEventListener('click', () => this.unlockAudio(), { once: true, passive: true });
   }
 
   unlockAudio() {
@@ -241,7 +237,8 @@ class TimerApp {
         await audioManager.unlockAudio();
       } catch (e) {
         console.error("Could not start timer because audio failed to unlock.", e);
-        // We can still proceed without audio if we want, but for now we'll just log.
+        // If audio fails to unlock, we shouldn't proceed with the timer logic.
+        return;
       }
     
       // 2️⃣ Original logic: Start or Stop the timer
