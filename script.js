@@ -130,22 +130,22 @@ const timerApp = {
     });
 
     saveSettingsBtn.addEventListener('click', () => this.saveSettings());
-    // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
-startBtn.addEventListener('click', async () => {
+ // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
+startBtn.addEventListener('click', () => {
   // 1️⃣ Create / unlock the AudioContext the very first tap
   unlockAudio();
 
   // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
   if (audioCtx && audioCtx.state === 'suspended') {
-    try { await audioCtx.resume(); }          // user-activation context ✔︎
-    catch (e) { console.warn('AudioContext resume failed:', e); }
+    // fire-and-forget; don't await, otherwise Safari-PWA may hang
+    audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
   }
 
   // 3️⃣ Original logic: Start or Stop the timer
   if (startBtn.textContent.includes('Start')) {
     this.startTimer();
   } else {
-    this.stopped = true;        // handled in updateTimerRAF
+    this.stopped = true;   // handled in updateTimerRAF
   }
 });
 
