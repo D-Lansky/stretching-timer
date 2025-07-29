@@ -5,55 +5,65 @@ class AudioManager {
   constructor() {
     this.audioCtx = null;
     this.isAudioAwake = false;
-    this.unlockingPromise = null; // Handles race conditions by ensuring only one unlock op runs at a time.
+    this.unlockingPromise = null;
+    // Proactively unlock on the first user gesture to handle strict OS policies (e.g., iOS beta).
+    document.addEventListener('pointerdown', () => this.unlockAudio(), { once: true, passive: true });
   }
 
-  unlockAudio() {
-    // If already unlocked, return a resolved promise immediately.
+  // This is the definitive fix. We rewrite unlockAudio as an async function
+  // and add a timeout to the resume() call. This prevents the promise from
+  // hanging indefinitely, which was freezing the UI.
+  async unlockAudio() {
     if (this.audioCtx && this.audioCtx.state === 'running') {
-      return Promise.resolve(true);
+      return; // Already running, nothing to do.
     }
-    // If an unlock is already in progress, return its promise to avoid race conditions.
+
     if (this.unlockingPromise) {
-      return this.unlockingPromise;
+      console.log('Unlock already in progress, waiting for it to complete...');
+      return this.unlockingPromise; // Wait for the existing unlock operation.
     }
 
-    // Start a new unlock operation.
-    this.unlockingPromise = new Promise((resolve, reject) => {
-      if (this.audioCtx && this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume().then(() => {
-          console.log('AudioContext resumed successfully.');
-          this._keepAudioAwake();
-          resolve(true);
-        }).catch(e => {
-          console.error('AudioContext resume failed:', e);
-          reject(e);
-        });
-        return;
-      }
-
+    const unlockTask = async () => {
       try {
-        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        console.log(`New AudioContext created in state: ${this.audioCtx.state}`);
+        // Create context if it doesn't exist
+        if (!this.audioCtx) {
+          console.log('Creating new AudioContext...');
+          this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // If it's suspended, we must resume it. This is the part that can hang.
         if (this.audioCtx.state === 'suspended') {
-          this.audioCtx.resume().then(() => {
-            console.log('Newly created AudioContext resumed.');
-            this._keepAudioAwake();
-            resolve(true);
-          }).catch(e => reject(e));
-        } else {
+          console.log('AudioContext is suspended, attempting to resume...');
+          // Race resume() against a 1-second timeout.
+          await Promise.race([
+            this.audioCtx.resume(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AudioContext.resume() timed out after 1 second.')), 1000))
+          ]);
+          console.log('AudioContext resumed successfully.');
+        }
+
+        // If we are now running, start the keep-awake loop.
+        if (this.audioCtx.state === 'running') {
           this._keepAudioAwake();
-          resolve(true);
+        } else {
+          // If it's still not running, something is wrong.
+          throw new Error(`AudioContext state is '${this.audioCtx.state}', not 'running'.`);
         }
       } catch (e) {
-        console.error("Could not create AudioContext:", e);
-        reject(e);
+        console.error('Failed to unlock audio:', e);
+        // In case of any error, discard the context so we can try fresh next time.
+        this.audioCtx = null;
+        this.isAudioAwake = false;
+        throw e; // Re-throw the error so the caller knows it failed.
       }
-    }).finally(() => {
-      // After the promise settles, clear it so subsequent calls can start a new unlock if needed.
+    };
+
+    this.unlockingPromise = unlockTask();
+    try {
+      await this.unlockingPromise;
+    } finally {
       this.unlockingPromise = null;
-    });
-    return this.unlockingPromise;
+    }
   }
 
   _keepAudioAwake() {
@@ -500,7 +510,7 @@ class TimerApp {
     settingsPresets.classList.remove("hide");
     switchMsg.style.display = "none";
     this.isFirstSwitch = true;
-    this.currentMode = 'stretch'; // Reset to initial sensible default
+    this.currentMode = 'switch'; // Reset to the "Get Ready!" state, consistent with startTimer.
     this.lastIntervalMode = null;
     this.loadSettings(); // Reload settings to default or saved
   }
