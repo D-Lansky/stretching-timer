@@ -1,89 +1,117 @@
 // =======================
 // MOBILE-OPTIMIZED BEEPS
 // =======================
-let audioCtx = null;
-let isAudioAwake = false; // Flag to ensure the keep-awake loop is started only once
-
-// This function starts a silent, looping sound to prevent iOS from suspending the AudioContext.
-function keepAudioAwake() {
-  if (isAudioAwake || !audioCtx || audioCtx.state !== 'running') return;
-  
-  const source = audioCtx.createBufferSource();
-  const buffer = audioCtx.createBuffer(1, 1, 22050); // 1 frame, 1 channel, 22050 sample rate
-  source.buffer = buffer;
-  source.loop = true;
-  
-  const gain = audioCtx.createGain();
-  gain.gain.value = 0; // Ensure it's silent
-  source.connect(gain);
-  gain.connect(audioCtx.destination);
-  source.start();
-  isAudioAwake = true;
-  console.log('Silent audio loop initiated to keep AudioContext active.');
-}
-
-function unlockAudio() {
-  console.log('Attempting to unlock audio...');
-  if (audioCtx && audioCtx.state === 'running') {
-    console.log('Audio context already running.');
-    return;
+class AudioManager {
+  constructor() {
+    this.audioCtx = null;
+    this.isAudioAwake = false;
+    // Unlock on the very first user interaction. { once: true } cleans up the listener automatically.
+    document.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
+    document.addEventListener('click', () => this.unlockAudio(), { once: true });
   }
 
-  // If the old one is 'suspended' try resuming; if it fails or is 'closed' create a new one.
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => {
-      if (audioCtx.state === 'running') {
-        console.log('Audio context successfully resumed.');
-        keepAudioAwake(); // Start the keep-awake loop
-        return;
-      }
-      audioCtx = null;                 // resume failed → fall through to new ctx
-    }).catch((error) => { console.error('Audio context resume failed:', error); audioCtx = null; });
-  }
-  
-  if (!audioCtx || audioCtx.state !== 'running') {
+  unlockAudio() {
+    if (this.audioCtx && this.audioCtx.state === 'running') return;
+
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().then(() => {
+        console.log('AudioContext resumed successfully.');
+        this._keepAudioAwake();
+      }).catch(e => console.error('AudioContext resume failed:', e));
+      return;
+    }
+
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      console.log(`New AudioContext created in state: ${audioCtx.state}`);
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      console.log(`New AudioContext created in state: ${this.audioCtx.state}`);
+      // A new context might start 'suspended' on some browsers and needs to be resumed.
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().then(() => {
+          console.log('Newly created AudioContext resumed.');
+          this._keepAudioAwake();
+        });
+      } else {
+        this._keepAudioAwake();
+      }
     } catch (e) {
       console.error("Could not create AudioContext:", e);
-      return; // Can't proceed
     }
   }
 
-  if (audioCtx.state === 'running') {
-    keepAudioAwake();
+  _keepAudioAwake() {
+    if (this.isAudioAwake || !this.audioCtx || this.audioCtx.state !== 'running') return;
+    // A 1-second silent buffer is more robust than a single-frame one.
+    const buffer = this.audioCtx.createBuffer(1, this.audioCtx.sampleRate * 1, this.audioCtx.sampleRate);
+    const source = this.audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const gain = this.audioCtx.createGain();
+    gain.gain.value = 0; // Ensure it's silent
+    source.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    source.start();
+    this.isAudioAwake = true;
+    console.log('Silent audio loop initiated to keep AudioContext active.');
   }
 
-  /* ---- iOS unlock tone (unchanged) ---- */
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain); gain.connect(audioCtx.destination);
-  gain.gain.value = 0.0001;
-  osc.start(); osc.stop(audioCtx.currentTime + 0.03);
+  playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
+    if (!this.audioCtx || this.audioCtx.state !== 'running') {
+      console.warn('Audio not ready, trying to unlock.');
+      this.unlockAudio();
+      return;
+    }
+    const now = this.audioCtx.currentTime;
+    const durationInSeconds = duration / 1000;
+
+    const oscillator = this.audioCtx.createOscillator();
+    const gainNode = this.audioCtx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(this.audioCtx.destination);
+
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, now);
+
+    // Use a gain envelope for smoother sound (prevents clicks)
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01); // Quick attack
+    gainNode.gain.linearRampToValueAtTime(0, now + durationInSeconds - 0.01); // Fade out before stop
+
+    oscillator.start(now);
+    oscillator.stop(now + durationInSeconds);
+  }
+
+  beepShort() { this.playBeep(100, 800, 0.42); }
+  beepLong() { this.playBeep(490, 380, 0.34); }
+
+  playCelebrationMusic() {
+    if (!this.audioCtx || this.audioCtx.state !== 'running') return;
+    let t = this.audioCtx.currentTime, baseVol = 0.22;
+    const tunes = [
+      [[523,0,0.14],[659,0.15,0.24],[784,0.25,0.32],[1047,0.33,0.45]],
+      [[440,0,0.12],[587,0.13,0.2],[740,0.21,0.26],[880,0.27,0.38]],
+      [[659,0,0.10],[784,0.10,0.19],[988,0.20,0.29],[1318,0.30,0.37],[1047,0.38,0.45]]
+    ];
+    const tune = tunes[Math.floor(Math.random() * tunes.length)];
+    tune.forEach(([freq, start, end], i) => {
+      const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
+      o.type = 'triangle'; o.frequency.value = freq;
+      g.gain.setValueAtTime(baseVol * (1.1 - 0.11 * i), t + start);
+      g.gain.linearRampToValueAtTime(0.001, t + end);
+      o.connect(g); g.connect(this.audioCtx.destination);
+      o.start(t + start); o.stop(t + end);
+    });
+    setTimeout(() => {
+      const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(1568, this.audioCtx.currentTime);
+      o.frequency.linearRampToValueAtTime(220, this.audioCtx.currentTime + 0.21);
+      g.gain.setValueAtTime(baseVol * 1.7, this.audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.21);
+      o.connect(g); g.connect(this.audioCtx.destination);
+      o.start(); o.stop(this.audioCtx.currentTime + 0.21);
+    }, (tune[tune.length-1][2] * 1000) + 20);
+  }
 }
-async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
-  if (!audioCtx) return;
-
-  const oscillator = audioCtx.createOscillator();
-  const gainNode  = audioCtx.createGain();
-  oscillator.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
-  oscillator.frequency.value = frequency;
-  oscillator.type  = type;
-  gainNode.gain.value = volume;
-
-  oscillator.start();
-  setTimeout(() => oscillator.stop(), duration);
-}
-
-function beepShort() { playBeep(100, 800, 0.42); }
-function beepLong() { playBeep(490, 380, 0.34); }
-
-// Unlock audio on first touch
-document.addEventListener('touchstart', () => {
-  unlockAudio();
-});
+const audioManager = new AudioManager();
 
 // =======================
 // DOM Element Selectors
@@ -179,13 +207,13 @@ class TimerApp {
     saveSettingsBtn.addEventListener('click', () => this.saveSettings()); 
     // 🔊 Start / Stop button — make sure AudioContext is resumed inside the user-gesture
     startBtn.addEventListener('click', () => {
-      // 1️⃣ Create / unlock the AudioContext the very first tap
-      unlockAudio();
+      // 1️⃣ Ensure audio is unlocked/resumed on this critical interaction.
+      audioManager.unlockAudio();
     
       // 2️⃣ iPad-PWA quirk: resume it on *every* tap that starts the timer
-      if (audioCtx && audioCtx.state !== 'running') {
-        // fire-and-forget; don't await, otherwise Safari-PWA may hang
-        audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+      if (audioManager.audioCtx && audioManager.audioCtx.state !== 'running') {
+        // Fire-and-forget resume attempt.
+        audioManager.audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
       }
     
       // 3️⃣ Original logic: Start or Stop the timer
@@ -250,7 +278,7 @@ class TimerApp {
   }
   
   startTimer() {
-    unlockAudio();
+    audioManager.unlockAudio(); // Ensure audio is ready
     this.stretchDuration = parseInt(stretchSlider.value);
     this.switchDuration = parseInt(switchSlider.value);
     this.totalWorkoutTime = parseInt(totalWorkoutSlider.value) * 60;
@@ -307,7 +335,7 @@ class TimerApp {
       }
       if (currentSecond !== this.lastBeepSecond) {
         this.lastBeepSecond = currentSecond;
-        beepShort();
+        audioManager.beepShort();
       }
     } else if (currentSecond > 3) { // Reset if above 3 seconds
       this.lastDisplayedSecond = currentSecond; // Keep track
@@ -341,7 +369,7 @@ class TimerApp {
   }
   
   _handleModeSwitch(now) {
-    beepLong();
+    audioManager.beepLong();
     if (this.currentMode === 'switch') {
       this.isFirstSwitch = false;
     }
@@ -385,7 +413,7 @@ class TimerApp {
     countdownEl.classList.remove("throb");
     if (this.timerInterval) cancelAnimationFrame(this.timerInterval);
     this.timerInterval = null;
-    beepLong();
+    audioManager.beepLong();
     pauseBtn.disabled = true;
     startBtn.textContent = "▶ Start";
     startBtn.classList.remove("stop-active");
@@ -518,7 +546,6 @@ class TimerApp {
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
   const timerApp = new TimerApp();
-  unlockAudio();
 
   // Register Service Worker
   if ('serviceWorker' in navigator) {
@@ -650,52 +677,8 @@ function launchConfetti() {
       confettiCanvas.style.display='none'; confettiMsg.style.display='none';
     }, 2300); // A bit longer than animation to ensure fade out of message
   }
-  celebrationMusic();
+  audioManager.playCelebrationMusic();
   animate();
-}
-function celebrationMusic(){
-  if (!audioCtx) return;
-  let t = audioCtx.currentTime, baseVol = 0.22;
-  const tunes = [
-    // Tune 1: Upbeat arpeggio
-    [
-      [523,0,0.14],[659,0.15,0.24],[784,0.25,0.32],[1047,0.33,0.45] // C5, E5, G5, C6
-    ],
-    // Tune 2: Slightly different upbeat arpeggio
-    [
-      [440,0,0.12],[587,0.13,0.2],[740,0.21,0.26],[880,0.27,0.38] // A4, D5, F#5, A5
-    ],
-    // Tune 3: More notes, faster
-    [
-      [659,0,0.10],[784,0.10,0.19],[988,0.20,0.29],[1318,0.30,0.37],[1047,0.38,0.45] // E5, G5, B5, E6, C6
-    ]
-  ];
-  const tune = tunes[Math.floor(Math.random() * tunes.length)];
-  tune.forEach(([freq, start, end], i) => {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'triangle'; // Triangle wave often sounds more "chiptune"
-    o.frequency.value = freq;
-    g.gain.value = baseVol * (1.1 - 0.11 * i); // Slight decay for each note
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(t + start);
-    o.stop(t + end);
-    // Add a slight fade out for each note to avoid clicks
-    g.gain.setValueAtTime(g.gain.value, t + start);
-    g.gain.linearRampToValueAtTime(0.001, t + end);
-  });
-
-  // Add a final flourish/descending tone
-  setTimeout(() => {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sine'; // Sine for a smoother flourish
-    o.frequency.setValueAtTime(1568, audioCtx.currentTime); // G6
-    o.frequency.linearRampToValueAtTime(220, audioCtx.currentTime + 0.21); // A3
-    g.gain.value = baseVol * 1.7; // Make it a bit louder
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + 0.21);
-    g.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.21); // Fade out
-  }, (tune[tune.length-1][2] * 1000) + 20); // Start after the last note of the tune
 }
 
 function emojiRain() {
@@ -745,7 +728,8 @@ function emojiRain() {
   requestAnimationFrame(animate);
 }
 document.addEventListener('visibilitychange', () => {
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch((error)=>{ console.warn('AudioContext resume on visibility change failed:', error); });
+  // When the app becomes visible again, try to resume the audio context.
+  if (audioManager.audioCtx && audioManager.audioCtx.state === 'suspended') {
+    audioManager.unlockAudio();
   }
 });
