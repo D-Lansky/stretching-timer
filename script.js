@@ -3,26 +3,31 @@
 // =======================
 let audioCtx = null;
 function unlockAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Play a silent sound to "unlock" iOS
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    gainNode.gain.value = 0.0001;
-    oscillator.start(0);
-    oscillator.stop(audioCtx.currentTime + 0.05);
+  // Re-use the context if it’s still running
+  if (audioCtx && audioCtx.state === 'running') return;
+
+  // If the old one is 'suspended' try resuming; if it fails or is 'closed' create a new one.
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => {
+      if (audioCtx.state === 'running') return;
+      audioCtx = null;                 // resume failed → fall through to new ctx
+    }).catch(() => { audioCtx = null; });
   }
+
+  if (!audioCtx || audioCtx.state !== 'running') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  /* ---- iOS unlock tone (unchanged) ---- */
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  gain.gain.value = 0.0001;
+  osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+}
 }
 async function playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
   if (!audioCtx) return;
-
-  // 🍎 iOS 17+ may leave the context suspended; resume it on every beep.
-  if (audioCtx.state === 'suspended') {
-    try { await audioCtx.resume(); }
-    catch (e) { console.warn('AudioContext resume failed:', e); }
-  }
 
   const oscillator = audioCtx.createOscillator();
   const gainNode  = audioCtx.createGain();
