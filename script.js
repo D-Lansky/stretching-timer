@@ -1,77 +1,64 @@
-// =======================
-// MOBILE-OPTIMIZED BEEPS
-// =======================
+// ---
+// Stretch Timer: iOS/iPadOS PWA-tolerant Audio, Enhanced Emoji, Wake Lock
+// ---
+
+// --- AudioManager: Handles beeps, music, and PWA workarounds ---
 class AudioManager {
   constructor() {
     this.audioCtx = null;
     this.isAudioAwake = false;
     this.unlockingPromise = null;
-    // Only unlock on user click/tap (NOT pointerdown/passive, which iPadOS may ignore for privileged actions)
+    this.audioWorking = true; // Will set false if PWA disables audio
+
+    // Try to unlock audio on first tap/click (direct user gesture only)
     document.addEventListener('click', () => this.unlockAudio(), { once: true, capture: true });
-    // On app regaining focus or visibility, try to resume audio context
+
+    // Also try on focus/visibilitychange (PWA/iOS windowed quirks)
     window.addEventListener('focus', () => this.unlockAudio());
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        this.unlockAudio();
-      }
+      if (document.visibilityState === 'visible') this.unlockAudio();
     });
   }
 
-  // This async unlock never blocks UI; errors are logged but ignored for UI.
+  // Attempt to unlock (or re-unlock) audio; never blocks UI.
   async unlockAudio() {
-    // If already running, nothing to do.
     if (this.audioCtx && this.audioCtx.state === 'running') return;
-
-    // If another unlock is in progress, wait for it to finish.
-    if (this.unlockingPromise) {
-      try { await this.unlockingPromise; } catch (e) {}
-      return;
-    }
-
+    if (this.unlockingPromise) { try { await this.unlockingPromise; } catch {} return; }
     const unlockTask = async () => {
       try {
         if (!this.audioCtx) {
-          console.log('[AudioManager] Creating new AudioContext...');
           this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
         if (this.audioCtx.state === 'suspended') {
-          console.log('[AudioManager] AudioContext is suspended, attempting to resume...');
           await Promise.race([
             this.audioCtx.resume(),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('AudioContext.resume() timed out after 1 second.')), 1000)
-            ),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AudioContext.resume() timed out')), 1000))
           ]);
-          console.log('[AudioManager] AudioContext resumed successfully.');
         }
         if (this.audioCtx.state === 'running') {
           this._keepAudioAwake();
+          this.audioWorking = true;
         } else {
-          throw new Error(`[AudioManager] AudioContext state is '${this.audioCtx.state}', not 'running'.`);
+          throw new Error(`AudioContext not running`);
         }
       } catch (e) {
-        console.error('[AudioManager] Failed to unlock audio:', e);
-        // Wipe context and flags so we can try again later.
         this.audioCtx = null;
         this.isAudioAwake = false;
+        this.audioWorking = false;
+        showAudioErrorToast();
+        console.warn('[AudioManager] Audio unavailable (likely PWA/iPadOS block):', e);
         throw e;
       }
     };
-
     this.unlockingPromise = unlockTask();
     try { await this.unlockingPromise; }
-    catch (e) {
-      // Log only, never block the UI
-      // (Even if audio fails, timer app remains usable!)
-      console.warn('[AudioManager] unlockAudio failed, but UI stays enabled.', e);
-    }
+    catch {}
     finally { this.unlockingPromise = null; }
   }
 
   _keepAudioAwake() {
     if (this.isAudioAwake || !this.audioCtx || this.audioCtx.state !== 'running') return;
-    // 1-second silent buffer keeps audio context alive for iOS.
-    const buffer = this.audioCtx.createBuffer(1, this.audioCtx.sampleRate * 1, this.audioCtx.sampleRate);
+    const buffer = this.audioCtx.createBuffer(1, this.audioCtx.sampleRate, this.audioCtx.sampleRate);
     const source = this.audioCtx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
@@ -81,36 +68,38 @@ class AudioManager {
     gain.connect(this.audioCtx.destination);
     source.start();
     this.isAudioAwake = true;
-    console.log('[AudioManager] Silent loop initiated to keep AudioContext alive.');
   }
 
   playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
     if (!this.audioCtx || this.audioCtx.state !== 'running') {
-      // Try unlocking again if needed, but never block UI.
+      this.audioWorking = false;
       this.unlockAudio();
+      showAudioErrorToast();
       return;
     }
     const now = this.audioCtx.currentTime;
-    const durationInSeconds = duration / 1000;
+    const durationSec = duration / 1000;
     const oscillator = this.audioCtx.createOscillator();
     const gainNode = this.audioCtx.createGain();
     oscillator.connect(gainNode);
     gainNode.connect(this.audioCtx.destination);
-
     oscillator.type = type;
     oscillator.frequency.setValueAtTime(frequency, now);
     gainNode.gain.setValueAtTime(0, now);
     gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
-    gainNode.gain.linearRampToValueAtTime(0, now + durationInSeconds - 0.01);
+    gainNode.gain.linearRampToValueAtTime(0, now + durationSec - 0.01);
     oscillator.start(now);
-    oscillator.stop(now + durationInSeconds);
+    oscillator.stop(now + durationSec);
   }
 
   beepShort() { this.playBeep(100, 800, 0.42); }
   beepLong() { this.playBeep(490, 380, 0.34); }
 
   playCelebrationMusic() {
-    if (!this.audioCtx || this.audioCtx.state !== 'running') return;
+    if (!this.audioCtx || this.audioCtx.state !== 'running') {
+      showAudioErrorToast();
+      return;
+    }
     let t = this.audioCtx.currentTime, baseVol = 0.22;
     const tunes = [
       [[523,0,0.14],[659,0.15,0.24],[784,0.25,0.32],[1047,0.33,0.45]],
@@ -126,8 +115,6 @@ class AudioManager {
       o.connect(g); g.connect(this.audioCtx.destination);
       o.start(t + start); o.stop(t + end);
     });
-
-    // Final flourish
     const lastNote = tune[tune.length - 1];
     const flourishStartTime = t + lastNote[2] + 0.020;
     const flourishDuration = 0.21;
@@ -145,9 +132,29 @@ class AudioManager {
 }
 const audioManager = new AudioManager();
 
-// =======================
-// DOM Element Selectors
-// =======================
+// --- Wake Lock Manager ---
+let wakeLock = null;
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        // console.log('Wake Lock was released');
+      });
+      // console.log('Wake Lock is active');
+    } catch (err) {
+      // Could not acquire Wake Lock
+    }
+  }
+}
+async function releaseWakeLock() {
+  if (wakeLock) {
+    try { await wakeLock.release(); } catch {}
+    wakeLock = null;
+  }
+}
+
+// --- DOM Elements ---
 const countdownEl = document.getElementById('countdown');
 const progressCircle = document.getElementById('progressCircle');
 const stretchSlider = document.getElementById('stretchSlider');
@@ -170,14 +177,22 @@ const switchMsg = document.getElementById('switchMsg');
 const twinkleContainer = document.getElementById('barTwinkleContainer');
 const toastNotificationEl = document.getElementById('toastNotification');
 
-// =======================
-// Timer State Object
-// =======================
+// --- Audio error toast ---
+function showAudioErrorToast() {
+  if (!toastNotificationEl) return;
+  toastNotificationEl.textContent = "Audio Unavailable in PWA";
+  toastNotificationEl.classList.add('show', 'error');
+  setTimeout(() => {
+    toastNotificationEl.classList.remove('show', 'error');
+  }, 3200);
+}
+
+// --- Timer App ---
 class TimerApp {
   constructor() {
     this.stretchDuration = 50;
     this.switchDuration = 10;
-    this.totalWorkoutTime = 20 * 60; // in seconds
+    this.totalWorkoutTime = 20 * 60;
     this.sessionStartTime = 0;
     this.sessionEndTime = 0;
     this.currentIntervalEndTime = 0;
@@ -191,8 +206,6 @@ class TimerApp {
     this.lastIntervalMode = null;
     this.timerRunning = false;
     this.isFirstSwitch = true;
-    this.circumference = 0;
-    this.twinkleStars = [];
     this.circumference = 2 * Math.PI * progressCircle.r.baseVal.value;
     progressCircle.style.strokeDasharray = this.circumference;
     this.updateCircle(0, true);
@@ -236,11 +249,8 @@ class TimerApp {
 
     saveSettingsBtn.addEventListener('click', () => this.saveSettings());
 
-    // The big change: ALWAYS start timer, even if audio fails!
     startBtn.addEventListener('click', async () => {
-      // Attempt to unlock audio but NEVER block the timer logic on it.
-      audioManager.unlockAudio(); // fire-and-forget
-      // Timer always starts/stops regardless of audio status!
+      audioManager.unlockAudio();
       if (startBtn.textContent.includes('Start')) {
         this.startTimer();
       } else {
@@ -288,7 +298,6 @@ class TimerApp {
     else if (fraction <= 0) offset = this.circumference;
     else offset = this.circumference * (1 - fraction);
     progressCircle.style.strokeDashoffset = offset;
-
     if (snap) {
       progressCircle.style.transition = "none";
       progressCircle.getBoundingClientRect();
@@ -296,18 +305,16 @@ class TimerApp {
     }
   }
 
-  startTimer() {
+  async startTimer() {
     this.stretchDuration = parseInt(stretchSlider.value);
     this.switchDuration = parseInt(switchSlider.value);
     this.totalWorkoutTime = parseInt(totalWorkoutSlider.value) * 60;
-
     this.currentMode = 'switch';
     this.lastIntervalMode = null;
     const now = Date.now();
     this.sessionStartTime = now;
     this.sessionEndTime = now + this.totalWorkoutTime * 1000;
     this.currentIntervalEndTime = now + this.switchDuration * 1000;
-
     this.lastBeepSecond = null;
     this.lastDisplayedSecond = null;
     this.paused = false;
@@ -315,16 +322,15 @@ class TimerApp {
     this.timerRunning = true;
     this.isFirstSwitch = true;
     settingsPresets.classList.add("hide");
-
     startBtn.textContent = "■ Stop";
     startBtn.classList.add("stop-active");
     startBtn.disabled = false;
     pauseBtn.disabled = false;
     resetBtn.disabled = false;
-
     this.updateCircle(0, true);
     if (this.timerInterval) cancelAnimationFrame(this.timerInterval);
     this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
+    await requestWakeLock();
   }
 
   _updateSessionProgress(now) {
@@ -340,9 +346,7 @@ class TimerApp {
     let remaining = (this.currentIntervalEndTime - now) / 1000;
     if (remaining < 0) remaining = 0;
     const currentSecond = Math.ceil(remaining);
-
     countdownEl.textContent = String(currentSecond).padStart(2, '0');
-
     if (currentSecond <= 3 && currentSecond > 0) {
       if (currentSecond !== this.lastDisplayedSecond) {
         countdownEl.classList.remove("throb");
@@ -376,7 +380,6 @@ class TimerApp {
     let fraction = 1 - (remainingSeconds / totalIntervalDuration);
     if (fraction < 0) fraction = 0;
     if (fraction > 1) fraction = 1;
-
     if (this.currentMode !== this.lastIntervalMode) {
       this.updateCircle(0, true);
       this.lastIntervalMode = this.currentMode;
@@ -387,9 +390,7 @@ class TimerApp {
 
   _handleModeSwitch(now) {
     audioManager.beepLong();
-    if (this.currentMode === 'switch') {
-      this.isFirstSwitch = false;
-    }
+    if (this.currentMode === 'switch') this.isFirstSwitch = false;
     this.currentMode = (this.currentMode === 'stretch') ? 'switch' : 'stretch';
     this.lastIntervalMode = null;
     this.lastBeepSecond = null;
@@ -399,32 +400,20 @@ class TimerApp {
   }
 
   updateTimerRAF() {
-    if (this.stopped) {
-      this.finishSession();
-      return;
-    }
+    if (this.stopped) { this.finishSession(); return; }
     const now = Date.now();
     this._updateSessionProgress(now);
-
-    if (now >= this.sessionEndTime) {
-      this.finishSession();
-      return;
-    }
-
+    if (now >= this.sessionEndTime) { this.finishSession(); return; }
     const remainingSecondsInInterval = this._handleIntervalCountdown(now);
     this._updateSwitchMessage();
     this._updateCircularProgress(remainingSecondsInInterval);
-
-    if (remainingSecondsInInterval <= 0) {
-      this._handleModeSwitch(now);
-    }
-
+    if (remainingSecondsInInterval <= 0) this._handleModeSwitch(now);
     if (!this.paused && this.timerRunning) {
       this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
     }
   }
 
-  finishSession() {
+  async finishSession() {
     countdownEl.textContent = "Done!";
     this.updateCircle(1, true);
     countdownEl.classList.remove("throb");
@@ -440,9 +429,10 @@ class TimerApp {
     switchMsg.style.display = "none";
     launchConfetti();
     emojiRain();
+    await releaseWakeLock();
   }
 
-  pauseTimer() {
+  async pauseTimer() {
     if (!this.timerRunning) return;
     if (!this.paused) {
       this.pausedData = {
@@ -457,6 +447,7 @@ class TimerApp {
       this.timerInterval = null;
       this.paused = true;
       pauseBtn.textContent = "▶ Resume";
+      await releaseWakeLock();
     } else {
       const now = Date.now();
       this.currentIntervalEndTime = now + this.pausedData.remainingInterval;
@@ -465,14 +456,14 @@ class TimerApp {
       this.currentMode = this.pausedData.mode;
       this.lastIntervalMode = this.pausedData.lastIntervalMode;
       this.isFirstSwitch = this.pausedData.isFirstSwitch;
-
       this.paused = false;
       pauseBtn.textContent = "⏸ Pause";
       this.timerInterval = requestAnimationFrame(() => this.updateTimerRAF());
+      await requestWakeLock();
     }
   }
 
-  resetTimer() {
+  async resetTimer() {
     if (this.timerInterval) cancelAnimationFrame(this.timerInterval);
     this.timerInterval = null;
     countdownEl.textContent = "00";
@@ -495,11 +486,10 @@ class TimerApp {
     this.currentMode = 'switch';
     this.lastIntervalMode = null;
     this.loadSettings();
+    await releaseWakeLock();
   }
 
-  // =======================
-  // Twinkle Effect
-  // =======================
+  // --- Twinkle effect for progress bar ---
   createTwinkles() {
     const twinkleCount = 14;
     if (!twinkleContainer) return;
@@ -558,25 +548,23 @@ class TimerApp {
   }
 }
 
-// Initialize the application
+// --- App init ---
 document.addEventListener('DOMContentLoaded', () => {
   const timerApp = new TimerApp();
-
-  // Register Service Worker (unchanged)
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
-          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+          // console.log('ServiceWorker registration successful:', registration.scope);
         })
         .catch(error => {
-          console.log('ServiceWorker registration failed: ', error);
+          // console.log('ServiceWorker registration failed:', error);
         });
     });
   }
 });
 
-// Confetti/music/emoji logic (unchanged from before)
+// --- Confetti/Emoji Celebration ---
 function launchConfetti() {
   const colors = [
     "#f72585","#b5179e","#7209b7","#560bad","#480ca8","#4361ee","#4cc9f0","#ffbe0b",
@@ -597,36 +585,15 @@ function launchConfetti() {
     "Are you secretly Gumby?\nBecause DAMN.",
     "If stretching were an Olympic sport,\nyou’d already have gold.",
     "You survived. The timer did not.",
-    "This timer was no match for your hamstrings.",
-    "You stretched further than my patience for corporate jargon.",
-    "Flex-ecution achieved. Consider the timer dominated.",
     "Michelangelo would have sculpted you instead.",
     "Elasticity: Level Over 9000.",
     "Mobility so smooth, oil companies are jealous.",
-    "Bruce Lee called. He wants his flexibility back.",
     "Chuck Norris now warms up to *your* videos.",
     "Are you even human? Or just a yoga deity?",
     "You’re basically a bendy straw with abs.",
-    "Certified Stretch Legend. Brag accordingly.",
-    "Did someone order a full-body victory dance?",
     "Your muscles filed for divorce from tightness.",
-    "The Matrix is calling. They want their Neo back.",
-    "Most flexible on the block. Block confirmed.",
-    "Game. Set. Stretch. Winner: You.",
-    "You've stretched more than the truth at a corporate earnings call.",
-    "Jeff Bezos called. He wants to know your flexibility secret.",
-    "Certified Gumby-core achievement unlocked.",
-    "You just unlocked the hidden yoga DLC. Namast-YES.",
-    "Is this a timer or a portal to bendy enlightenment?",
-    "NASA wants to study your joints for space missions.",
-    "You stretched so hard, your Wi-Fi signal improved.",
-    "Flexed so good, your smartwatch applied for early retirement.",
-    "Mobility: maxed. Ego: deserved.",
-    "If limbs had XP, yours just leveled up.",
-    "Even your tight jeans are impressed.",
-    "Legend says your hamstrings just signed a peace treaty.",
+    "Certified Stretch Legend. Brag accordingly.",
     "The timer's scared of you now.",
-    "Stretch complete. Swagger enabled.",
     "Time bent. You did too."
   ];
   confettiMsg.textContent = messages[Math.floor(Math.random()*messages.length)];
@@ -694,9 +661,14 @@ function launchConfetti() {
   animate();
 }
 
+// --- Emoji Rain Celebration: Extra Emojis! ---
 function emojiRain() {
-  const emojis = ['✨', '🎉', '💜', '💪', '👑', '😎'];
-  const emojiCount = 35 + Math.floor(Math.random() * 15);
+  const emojis = [
+    '✨','🎉','💜','💪','👑','😎','😃','🥳','🙆‍♂️','🙆‍♀️','🧘‍♂️','🧘‍♀️','🤸‍♂️','🤸‍♀️',
+    '🦸‍♂️','🦸‍♀️','🏆','🎊','🎈','🕺','💃','💯','🔥','🦾','🥇','👟','🦵','🦶','😺',
+    '🦄','🦋','🍀','🌈','🌞','😌','🎵','🔔','🥒','🥦','🍇','🍉','🍓','🦴','🧬'
+  ];
+  const emojiCount = 42 + Math.floor(Math.random() * 14);
   const explosionObjects = [];
   const container = document.body;
   const cx = window.innerWidth / 2;
@@ -724,7 +696,7 @@ function emojiRain() {
     });
   }
 
-  let frame = 0, maxFrames = 240;
+  let frame = 0, maxFrames = 260;
   function animate() {
     explosionObjects.forEach(obj => {
       obj.x += obj.vx; obj.y += obj.vy;
@@ -741,9 +713,12 @@ function emojiRain() {
   requestAnimationFrame(animate);
 }
 
-// Also attempt unlock if the app comes back to visibility (for super robustness)
+// Wake lock restore on app becoming visible again
 document.addEventListener('visibilitychange', () => {
   if (audioManager.audioCtx && audioManager.audioCtx.state === 'suspended') {
     audioManager.unlockAudio();
+  }
+  if (document.visibilityState === 'visible' && document.querySelector('.stop-active')) {
+    requestWakeLock();
   }
 });
