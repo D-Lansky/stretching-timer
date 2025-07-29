@@ -1,0 +1,38 @@
+name: Deploy to Hugging Face
+on:
+  push:
+    branches: [main]     # adjust if you deploy from a different branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out your GitHub repo (this contains the fresh code)
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Clone the Space repo into ./hf-space
+      - name: Clone HF Space
+        run: |
+          git clone https://DLansky:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/DLansky/Stretching-Timer hf-space
+
+      # 3. Copy *all* files from your repo into that clone
+      - name: Sync files
+        run: |
+          rsync -av --delete --exclude ".git/" ./ hf-space/
+
+      # 4. Commit & push only if something changed
+      - name: Push to HF
+        run: |
+          cd hf-space
+          git config user.email "actions@github.com"
+          git config user.name  "GitHub Actions"
+          if ! git diff --quiet; then
+            git add .
+            git commit -m "Auto-deploy $GITHUB_SHA"
+            git push origin main
+          else
+            echo "No changes to deploy."
+          fi
