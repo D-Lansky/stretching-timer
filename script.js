@@ -5,10 +5,10 @@ class AudioManager {
   constructor() {
     this.audioCtx = null;
     this.isAudioAwake = false;
-    // Unlock on the very first user interaction. { once: true } cleans up the listener automatically.
-    // We remove 'once: true' to aggressively re-unlock if the context ever suspends again.
-    document.addEventListener('touchstart', () => this.unlockAudio(), { passive: true });
-    document.addEventListener('click', () => this.unlockAudio(), { passive: true });
+    // Unlock on the very first user interaction. `{ once: true }` is crucial to prevent
+    // race conditions with the button's own `unlockAudio` call.
+    document.addEventListener('touchstart', () => this.unlockAudio(), { once: true, passive: true });
+    document.addEventListener('click', () => this.unlockAudio(), { once: true, passive: true });
   }
 
   unlockAudio() {
