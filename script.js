@@ -2,9 +2,28 @@
 // MOBILE-OPTIMIZED BEEPS
 // =======================
 let audioCtx = null;
+let isAudioAwake = false; // Flag to ensure the keep-awake loop is started only once
+
+// This function starts a silent, looping sound to prevent iOS from suspending the AudioContext.
+function keepAudioAwake() {
+  if (isAudioAwake || !audioCtx || audioCtx.state !== 'running') return;
+  
+  const source = audioCtx.createBufferSource();
+  const buffer = audioCtx.createBuffer(1, 1, 22050); // 1 frame, 1 channel, 22050 sample rate
+  source.buffer = buffer;
+  source.loop = true;
+  
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0; // Ensure it's silent
+  source.connect(gain);
+  gain.connect(audioCtx.destination);
+  source.start();
+  isAudioAwake = true;
+  console.log('Silent audio loop initiated to keep AudioContext active.');
+}
+
 function unlockAudio() {
   console.log('Attempting to unlock audio...');
-  // Re-use the context if it’s still running
   if (audioCtx && audioCtx.state === 'running') {
     console.log('Audio context already running.');
     return;
@@ -15,6 +34,7 @@ function unlockAudio() {
     audioCtx.resume().then(() => {
       if (audioCtx.state === 'running') {
         console.log('Audio context successfully resumed.');
+        keepAudioAwake(); // Start the keep-awake loop
         return;
       }
       audioCtx = null;                 // resume failed → fall through to new ctx
@@ -22,7 +42,17 @@ function unlockAudio() {
   }
   
   if (!audioCtx || audioCtx.state !== 'running') {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      console.log(`New AudioContext created in state: ${audioCtx.state}`);
+    } catch (e) {
+      console.error("Could not create AudioContext:", e);
+      return; // Can't proceed
+    }
+  }
+
+  if (audioCtx.state === 'running') {
+    keepAudioAwake();
   }
 
   /* ---- iOS unlock tone (unchanged) ---- */
@@ -667,21 +697,52 @@ function celebrationMusic(){
     g.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.21); // Fade out
   }, (tune[tune.length-1][2] * 1000) + 20); // Start after the last note of the tune
 }
+
 function emojiRain() {
-  const emojis = ['✨','🎉','💜','💪','👑','😎']; // Curated list
-  let n = 18 + Math.floor(Math.random()*12); // Random count between 18-30
-  for(let i=0;i<n;i++) {
-    setTimeout(()=>{
-      let e = document.createElement('div');
-      e.className = 'emoji-drop';
-      e.textContent = emojis[Math.floor(Math.random()*emojis.length)];
-      e.style.left = (5 + Math.random()*90) + 'vw'; // Random horizontal position
-      e.style.top = '-6vh'; // Start above screen
-      e.style.fontSize = (2.5 + Math.random()*2.7) + 'rem'; // Random size
-      document.body.appendChild(e);
-      setTimeout(()=>e.remove(), 3000); // Remove after animation
-    }, Math.random()*1500); // Stagger start times
-  } 
+  const emojis = ['✨', '🎉', '💜', '💪', '👑', '😎'];
+  const emojiCount = 35 + Math.floor(Math.random() * 15);
+  const explosionObjects = [];
+  const container = document.body;
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+
+  for (let i = 0; i < emojiCount; i++) {
+    const el = document.createElement('div');
+    el.style.position = 'fixed';
+    el.style.left = `${cx}px`;
+    el.style.top = `${cy}px`;
+    el.style.fontSize = `${1.5 + Math.random() * 2}rem`;
+    el.style.transform = 'translate(-50%, -50%)';
+    el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    container.appendChild(el);
+
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = 8 + Math.random() * 12;
+
+    explosionObjects.push({
+      el, x: cx, y: cy,
+      vx: Math.cos(angle) * velocity,
+      vy: Math.sin(angle) * velocity,
+      gravity: 0.1 + Math.random() * 0.05,
+      rotation: (Math.random() - 0.5) * 20, rot: 0, opacity: 1
+    });
+  }
+
+  let frame = 0, maxFrames = 240;
+  function animate() {
+    explosionObjects.forEach(obj => {
+      obj.x += obj.vx; obj.y += obj.vy;
+      obj.vy += obj.gravity; obj.vx *= 0.99; obj.vy *= 0.99;
+      obj.rot += obj.rotation;
+      if (frame > maxFrames / 2) obj.opacity -= 1 / (maxFrames / 2);
+      obj.el.style.transform = `translate(${obj.x - cx}px, ${obj.y - cy}px) rotate(${obj.rot}deg)`;
+      obj.el.style.opacity = Math.max(0, obj.opacity);
+    });
+    frame++;
+    if (frame < maxFrames) requestAnimationFrame(animate);
+    else explosionObjects.forEach(obj => obj.el.remove());
+  }
+  requestAnimationFrame(animate);
 }
 document.addEventListener('visibilitychange', () => {
   if (audioCtx && audioCtx.state === 'suspended') {
