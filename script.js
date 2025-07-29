@@ -5,6 +5,7 @@ class AudioManager {
   constructor() {
     this.audioCtx = null;
     this.isAudioAwake = false;
+    this.unlockingPromise = null; // Handles race conditions by ensuring only one unlock op runs at a time.
     // Unlock on the very first user interaction. `{ once: true }` is crucial to prevent
     // race conditions with the button's own `unlockAudio` call.
     document.addEventListener('touchstart', () => this.unlockAudio(), { once: true, passive: true });
@@ -12,11 +13,17 @@ class AudioManager {
   }
 
   unlockAudio() {
-    return new Promise((resolve, reject) => {
-      if (this.audioCtx && this.audioCtx.state === 'running') {
-        return resolve(true);
-      }
+    // If already unlocked, return a resolved promise immediately.
+    if (this.audioCtx && this.audioCtx.state === 'running') {
+      return Promise.resolve(true);
+    }
+    // If an unlock is already in progress, return its promise to avoid race conditions.
+    if (this.unlockingPromise) {
+      return this.unlockingPromise;
+    }
 
+    // Start a new unlock operation.
+    this.unlockingPromise = new Promise((resolve, reject) => {
       if (this.audioCtx && this.audioCtx.state === 'suspended') {
         this.audioCtx.resume().then(() => {
           console.log('AudioContext resumed successfully.');
@@ -46,7 +53,11 @@ class AudioManager {
         console.error("Could not create AudioContext:", e);
         reject(e);
       }
+    }).finally(() => {
+      // After the promise settles, clear it so subsequent calls can start a new unlock if needed.
+      this.unlockingPromise = null;
     });
+    return this.unlockingPromise;
   }
 
   _keepAudioAwake() {
@@ -414,7 +425,7 @@ class TimerApp {
     this._updateSwitchMessage();
     this._updateCircularProgress(remainingSecondsInInterval);
 
-    if (remainingSecondsInInterval === 0) {
+    if (remainingSecondsInInterval <= 0) {
       this._handleModeSwitch(now);
     }
 
