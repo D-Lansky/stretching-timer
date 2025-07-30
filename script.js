@@ -70,7 +70,7 @@ class AudioManager {
     this.isAudioAwake = true;
   }
 
-  playBeep(duration = 100, frequency = 800, volume = 0.4, type = 'sine') {
+  playBeep(duration = 100, frequency = 800, volume = 0.8, type = 'sine') {
     if (!this.audioCtx || this.audioCtx.state !== 'running') {
       this.audioWorking = false;
       this.unlockAudio();
@@ -92,8 +92,8 @@ class AudioManager {
     oscillator.stop(now + durationSec);
   }
 
-  beepShort() { this.playBeep(100, 800, 0.42); }
-  beepLong() { this.playBeep(490, 380, 0.34); }
+  beepShort() { this.playBeep(100, 800, 0.7); }
+  beepLong() { this.playBeep(490, 380, 0.7); }
 
   playCelebrationMusic() {
     if (!this.audioCtx || this.audioCtx.state !== 'running') {
