@@ -65,5 +65,34 @@
   <canvas id="confettiCanvas" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;display:none;"></canvas>
    <div id="confettiMsg" role="status" aria-live="polite"></div>
   <script type="module" src="main.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        // When a new SW is found
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            // If we already have a controller and a new SW is installed → skip waiting
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+
+        // Reload once when the new SW takes control (prevents stale JS)
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+      }).catch(err => {
+        console.warn('SW registration failed:', err);
+      });
+    });
+  }
+</script>
 </body>
 </html>
