@@ -3,53 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <title>Stretch Timer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700&display=swap" rel="stylesheet">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#800080">
+
+  <!-- iOS PWA polish -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stretch Timer">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <h1>Stretch Timer</h1>
   </header>
+
   <main>
+    <!-- Timer Section -->
     <section class="timer-section" aria-label="Timer display">
       <div class="timer-container">
-        <svg width="100%" height="100%" viewBox="0 0 450 450">
+        <svg width="100%" height="100%" viewBox="0 0 450 450" aria-hidden="true">
           <circle id="progressCircle" stroke="#dda0dd" fill="transparent" r="200" cx="225" cy="225"></circle>
         </svg>
         <div id="countdown" aria-live="polite" aria-atomic="true">00</div>
       </div>
+
       <div class="session-progress-container" aria-hidden="true">
         <div class="progress-bar" id="sessionBar"></div>
         <div id="barTwinkleContainer"></div>
       </div>
+
       <div id="sessionPercentage" aria-label="Workout progress percentage">0% Complete</div>
-       <div id="switchMsg" aria-live="polite"></div>
+      <div id="switchMsg" aria-live="polite"></div>
     </section>
+
+    <!-- Controls -->
     <div class="controls" aria-label="Timer controls">
       <button id="startBtn">▶ Start</button>
       <button id="pauseBtn" disabled>⏸ Pause</button>
       <button id="resetBtn" disabled>↻ Reset</button>
     </div>
+
+    <!-- Settings & Presets -->
     <div class="settings-presets-container" id="settingsPresets">
       <div class="settings" aria-label="Timer settings">
         <h2>Timer Settings</h2>
+
         <div class="slider-group">
           <label for="stretchSlider">Stretch (sec): <span id="stretchValue">50</span></label>
           <input type="range" id="stretchSlider" min="1" max="120" value="50">
         </div>
+
         <div class="slider-group">
           <label for="switchSlider">Switch (sec): <span id="switchValue">10</span></label>
           <input type="range" id="switchSlider" min="1" max="60" value="10">
         </div>
+
         <div class="slider-group">
           <label for="totalWorkoutSlider">Total Workout (min): <span id="totalWorkoutValue">20</span></label>
           <input type="range" id="totalWorkoutSlider" min="1" max="60" value="20">
         </div>
+
         <button id="saveSettings">Save Settings</button>
       </div>
+
       <div class="presets-container" aria-label="Quick presets">
         <h2>Quick Presets</h2>
         <div class="presets-grid">
@@ -61,38 +82,47 @@
       </div>
     </div>
   </main>
+
+  <!-- Toast + Confetti -->
   <div id="toastNotification" class="toast" aria-live="assertive" aria-atomic="true">Settings Saved!</div>
   <canvas id="confettiCanvas" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;display:none;"></canvas>
-   <div id="confettiMsg" role="status" aria-live="polite"></div>
-  <script type="module" src="main.js"></script>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').then(reg => {
-        // When a new SW is found
-        reg.addEventListener('updatefound', () => {
-          const nw = reg.installing;
-          if (!nw) return;
-          nw.addEventListener('statechange', () => {
-            // If we already have a controller and a new SW is installed → skip waiting
-            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-              reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
-            }
-          });
-        });
+  <div id="confettiMsg" role="status" aria-live="polite"></div>
 
-        // Reload once when the new SW takes control (prevents stale JS)
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (refreshing) return;
-          refreshing = true;
-          window.location.reload();
+  <!-- App entry -->
+  <script type="module" src="main.js"></script>
+
+  <!-- Robust SW registration: auto-activate updates + one-time reload -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+          // When a new SW is found while an old one controls the page
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+
+          // Reload once when the new SW takes control (prevents stale JS)
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshing) return;
+            refreshing = true;
+            window.location.reload();
+          });
+        }).catch(err => {
+          console.warn('SW registration failed:', err);
         });
-      }).catch(err => {
-        console.warn('SW registration failed:', err);
       });
-    });
-  }
-</script>
+    }
+  </script>
+
+  <noscript>
+    <p style="text-align:center;color:#fff;padding:1rem">This app needs JavaScript enabled.</p>
+  </noscript>
 </body>
 </html>
