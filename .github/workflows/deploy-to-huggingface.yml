@@ -24,7 +24,7 @@ jobs:
     # 3⃣  Sync all project files into that clone (mirror deletions)
     - name: Sync files
       run: |
-        rsync -av --delete --exclude ".git/" ./ hf-space/
+        rsync -av --delete --exclude ".git/" --exclude "hf-space/" ./ hf-space/
 
     # 4⃣  Commit & push only when changes exist
     - name: Push to HF
