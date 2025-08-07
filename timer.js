@@ -1,160 +1,25 @@
-// ---
-// Stretch Timer: iOS/iPadOS PWA-tolerant Audio, Enhanced Emoji, Wake Lock
-// ---
+import { audioManager } from './audioManager.js';
+import { launchConfetti, emojiRain } from './animations.js';
 
-// --- AudioManager: Handles beeps, music, and PWA workarounds ---
-class AudioManager {
-  constructor() {
-    this.audioCtx = null;
-    this.isAudioAwake = false;
-    this.unlockingPromise = null;
-    this.audioWorking = true; // Will set false if PWA disables audio
-
-    // Try to unlock audio on first tap/click (direct user gesture only)
-    document.addEventListener('click', () => this.unlockAudio(), { once: true, capture: true });
-
-    // Also try on focus/visibilitychange (PWA/iOS windowed quirks)
-    window.addEventListener('focus', () => this.unlockAudio());
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') this.unlockAudio();
-    });
-  }
-
-  // Attempt to unlock (or re-unlock) audio; never blocks UI.
-  async unlockAudio() {
-    if (this.audioCtx && this.audioCtx.state === 'running') return;
-    if (this.unlockingPromise) { try { await this.unlockingPromise; } catch {} return; }
-    const unlockTask = async () => {
-      try {
-        if (!this.audioCtx) {
-          this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (this.audioCtx.state === 'suspended') {
-          await Promise.race([
-            this.audioCtx.resume(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('AudioContext.resume() timed out')), 1000))
-          ]);
-        }
-        if (this.audioCtx.state === 'running') {
-          this._keepAudioAwake();
-          this.audioWorking = true;
-        } else {
-          throw new Error(`AudioContext not running`);
-        }
-      } catch (e) {
-        this.audioCtx = null;
-        this.isAudioAwake = false;
-        this.audioWorking = false;
-        showAudioErrorToast();
-        console.warn('[AudioManager] Audio unavailable (likely PWA/iPadOS block):', e);
-        throw e;
-      }
-    };
-    this.unlockingPromise = unlockTask();
-    try { await this.unlockingPromise; }
-    catch {}
-    finally { this.unlockingPromise = null; }
-  }
-
-  _keepAudioAwake() {
-    if (this.isAudioAwake || !this.audioCtx || this.audioCtx.state !== 'running') return;
-    const buffer = this.audioCtx.createBuffer(1, this.audioCtx.sampleRate, this.audioCtx.sampleRate);
-    const source = this.audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    const gain = this.audioCtx.createGain();
-    gain.gain.value = 0;
-    source.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    source.start();
-    this.isAudioAwake = true;
-  }
-
-  playBeep(duration = 100, frequency = 800, volume = 0.8, type = 'sine') {
-    if (!this.audioCtx || this.audioCtx.state !== 'running') {
-      this.audioWorking = false;
-      this.unlockAudio();
-      showAudioErrorToast();
-      return;
-    }
-    const now = this.audioCtx.currentTime;
-    const durationSec = duration / 1000;
-    const oscillator = this.audioCtx.createOscillator();
-    const gainNode = this.audioCtx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(this.audioCtx.destination);
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, now);
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
-    gainNode.gain.linearRampToValueAtTime(0, now + durationSec - 0.01);
-    oscillator.start(now);
-    oscillator.stop(now + durationSec);
-  }
-
-  beepShort() { this.playBeep(100, 800, 0.7); }
-  beepLong() { this.playBeep(490, 380, 0.7); }
-
-  playCelebrationMusic() {
-    if (!this.audioCtx || this.audioCtx.state !== 'running') {
-      showAudioErrorToast();
-      return;
-    }
-    let t = this.audioCtx.currentTime, baseVol = 0.22;
-    const tunes = [
-      [[523,0,0.14],[659,0.15,0.24],[784,0.25,0.32],[1047,0.33,0.45]],
-      [[440,0,0.12],[587,0.13,0.2],[740,0.21,0.26],[880,0.27,0.38]],
-      [[659,0,0.10],[784,0.10,0.19],[988,0.20,0.29],[1318,0.30,0.37],[1047,0.38,0.45]]
-    ];
-    const tune = tunes[Math.floor(Math.random() * tunes.length)];
-    tune.forEach(([freq, start, end], i) => {
-      const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
-      o.type = 'triangle'; o.frequency.value = freq;
-      g.gain.setValueAtTime(baseVol * (1.1 - 0.11 * i), t + start);
-      g.gain.linearRampToValueAtTime(0.001, t + end);
-      o.connect(g); g.connect(this.audioCtx.destination);
-      o.start(t + start); o.stop(t + end);
-    });
-    const lastNote = tune[tune.length - 1];
-    const flourishStartTime = t + lastNote[2] + 0.020;
-    const flourishDuration = 0.21;
-    const flourishEndTime = flourishStartTime + flourishDuration;
-    const o = this.audioCtx.createOscillator(), g = this.audioCtx.createGain();
-    o.type = 'sine';
-    o.connect(g); g.connect(this.audioCtx.destination);
-    o.frequency.setValueAtTime(1568, flourishStartTime);
-    o.frequency.linearRampToValueAtTime(220, flourishEndTime);
-    g.gain.setValueAtTime(baseVol * 1.7, flourishStartTime);
-    g.gain.linearRampToValueAtTime(0.001, flourishEndTime);
-    o.start(flourishStartTime);
-    o.stop(flourishEndTime);
-  }
-}
-const audioManager = new AudioManager();
-
-// --- Wake Lock Manager ---
 let wakeLock = null;
-async function requestWakeLock() {
+export async function requestWakeLock() {
   if ('wakeLock' in navigator) {
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => {
-        // console.log('Wake Lock was released');
-      });
-      // console.log('Wake Lock is active');
+      wakeLock.addEventListener('release', () => {});
     } catch (err) {
-      // Could not acquire Wake Lock
+      // ignore errors
     }
   }
 }
-async function releaseWakeLock() {
+
+export async function releaseWakeLock() {
   if (wakeLock) {
     try { await wakeLock.release(); } catch {}
     wakeLock = null;
   }
 }
 
-// --- DOM Elements ---
 const countdownEl = document.getElementById('countdown');
 const progressCircle = document.getElementById('progressCircle');
 const stretchSlider = document.getElementById('stretchSlider');
@@ -170,25 +35,12 @@ const resetBtn = document.getElementById('resetBtn');
 const sessionBar = document.getElementById('sessionBar');
 const sessionPercentage = document.getElementById('sessionPercentage');
 const presetButtons = document.querySelectorAll('.preset-btn');
-const confettiCanvas = document.getElementById('confettiCanvas');
-const confettiMsg = document.getElementById('confettiMsg');
 const settingsPresets = document.getElementById('settingsPresets');
 const switchMsg = document.getElementById('switchMsg');
 const twinkleContainer = document.getElementById('barTwinkleContainer');
 const toastNotificationEl = document.getElementById('toastNotification');
 
-// --- Audio error toast ---
-function showAudioErrorToast() {
-  if (!toastNotificationEl) return;
-  toastNotificationEl.textContent = "Audio Unavailable in PWA";
-  toastNotificationEl.classList.add('show', 'error');
-  setTimeout(() => {
-    toastNotificationEl.classList.remove('show', 'error');
-  }, 3200);
-}
-
-// --- Timer App ---
-class TimerApp {
+export class TimerApp {
   constructor() {
     this.stretchDuration = 50;
     this.switchDuration = 10;
@@ -489,7 +341,6 @@ class TimerApp {
     await releaseWakeLock();
   }
 
-  // --- Twinkle effect for progress bar ---
   createTwinkles() {
     const twinkleCount = 14;
     if (!twinkleContainer) return;
@@ -543,182 +394,7 @@ class TimerApp {
         star.style.opacity = 0;
         setTimeout(twinkle, 380 + Math.random() * 700);
       }, duration);
-    }
+    };
     setTimeout(twinkle, idx * 140 + Math.random() * 150);
   }
 }
-
-// --- App init ---
-document.addEventListener('DOMContentLoaded', () => {
-  const timerApp = new TimerApp();
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(registration => {
-          // console.log('ServiceWorker registration successful:', registration.scope);
-        })
-        .catch(error => {
-          // console.log('ServiceWorker registration failed:', error);
-        });
-    });
-  }
-});
-
-// --- Confetti/Emoji Celebration ---
-function launchConfetti() {
-  const colors = [
-    "#f72585","#b5179e","#7209b7","#560bad","#480ca8","#4361ee","#4cc9f0","#ffbe0b",
-    "#fb5607","#ff006e","#8338ec","#3a86ff","#3cff00","#00ff99","#ffd700","#ffffff",
-    "#39ff14","#ff1493","#00cfff","#fffc00","#ff5e00","#fe019a","#ffb300","#c6ff00",
-    "#a020f0","#adff2f","#ed2939","#d72631","#faff00","#ffa600","#d0f400","#f900bf",
-    "#f4a259","#43bccd","#fcf6b1","#fa8334","#20bf55","#9f86c0"
-  ];
-  const messages = [
-    "You Did It!\n🏆 Stretch Complete! 🏆",
-    "Victory!\nYou're a Flexibility Overlord!",
-    "LEGENDARY.\nNo one stretches like you.",
-    "Stretch Goal: ACHIEVED",
-    "Unstoppable!\nNow go brag.",
-    "You crushed it!\nOn to world domination.",
-    "One small stretch for you, one giant leap for mankind.",
-    "💪 FLEX LEVEL: GOD 💪",
-    "Are you secretly Gumby?\nBecause DAMN.",
-    "If stretching were an Olympic sport,\nyou’d already have gold.",
-    "You survived. The timer did not.",
-    "Michelangelo would have sculpted you instead.",
-    "Elasticity: Level Over 9000.",
-    "Mobility so smooth, oil companies are jealous.",
-    "Chuck Norris now warms up to *your* videos.",
-    "Are you even human? Or just a yoga deity?",
-    "You’re basically a bendy straw with abs.",
-    "Your muscles filed for divorce from tightness.",
-    "Certified Stretch Legend. Brag accordingly.",
-    "The timer's scared of you now.",
-    "Time bent. You did too."
-  ];
-  confettiMsg.textContent = messages[Math.floor(Math.random()*messages.length)];
-  confettiMsg.style.display = 'block';
-  const ctx = confettiCanvas.getContext('2d');
-  confettiCanvas.width = window.innerWidth * 2;
-  confettiCanvas.height = window.innerHeight * 2;
-  ctx.setTransform(2,0,0,2,0,0);
-  confettiCanvas.style.display = 'block';
-  const cx = window.innerWidth/2, cy = window.innerHeight/2;
-  const confettiCount = 1200;
-  const shapes = ['ellipse','rect','triangle'], confetti = [];
-  for(let i=0;i<confettiCount;i++){
-    const angle = Math.random()*Math.PI*2, velocity = 12+Math.random()*19;
-    confetti.push({
-      x: cx, y: cy, r: 7+Math.random()*13,
-      color: colors[Math.floor(Math.random()*colors.length)],
-      tilt: Math.random()*Math.PI*2, tiltSpeed: (Math.random()-0.5)*0.15,
-      vx: Math.cos(angle)*velocity, vy: Math.sin(angle)*velocity,
-      gravity: 0.14+Math.random()*0.17,
-      shape: shapes[Math.floor(Math.random()*shapes.length)],
-      rotation: Math.random()*360, rotSpeed: (Math.random()-0.5)*9
-    });
-  }
-  let frame = 0, maxFrames = 420;
-  function draw() {
-    ctx.clearRect(0,0,confettiCanvas.width,confettiCanvas.height);
-    for(const c of confetti) {
-      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.tilt);
-      ctx.globalAlpha = Math.max(0, 1-frame/maxFrames);
-      if(c.shape==='ellipse'){
-        ctx.beginPath();
-        ctx.ellipse(0,0,c.r,c.r*0.45,0,0,2*Math.PI);
-        ctx.fillStyle=c.color; ctx.fill();
-      } else if(c.shape==='rect'){
-        ctx.rotate(c.rotation * Math.PI / 180);
-        ctx.fillStyle=c.color;
-        ctx.fillRect(-c.r/2,-c.r/6,c.r, c.r/3);
-      } else if(c.shape==='triangle'){
-        ctx.beginPath();
-        ctx.moveTo(0,-c.r/2); ctx.lineTo(-c.r/2,c.r/2); ctx.lineTo(c.r/2,c.r/2);
-        ctx.closePath(); ctx.fillStyle=c.color; ctx.fill();
-      }
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-  }
-  function update() {
-    for(const c of confetti){
-      c.x += c.vx; c.y += c.vy;
-      c.vy += c.gravity; c.vx *= 0.985; c.vy *= 0.985;
-      c.tilt += c.tiltSpeed; c.rotation += c.rotSpeed;
-      if(Math.random()<0.04) c.vx += (Math.random()-0.5)*1.4;
-    }
-    frame++;
-  }
-  function animate() {
-    update(); draw();
-    if(frame < maxFrames) requestAnimationFrame(animate);
-    else setTimeout(()=>{
-      confettiCanvas.style.display='none'; confettiMsg.style.display='none';
-    }, 2300);
-  }
-  audioManager.playCelebrationMusic();
-  animate();
-}
-
-// --- Emoji Rain Celebration: Extra Emojis! ---
-function emojiRain() {
-  const emojis = [
-    '✨','🎉','💜','💪','👑','😎','😃','🥳','🙆‍♂️','🙆‍♀️','🧘‍♂️','🧘‍♀️','🤸‍♂️','🤸‍♀️',
-    '🦸‍♂️','🦸‍♀️','🏆','🎊','🎈','🕺','💃','💯','🔥','🦾','🥇','👟','🦵','🦶','😺',
-    '🦄','🦋','🍀','🌈','🌞','😌','🎵','🔔','🥒','🥦','🍇','🍉','🍓','🦴','🧬'
-  ];
-  const emojiCount = 42 + Math.floor(Math.random() * 14);
-  const explosionObjects = [];
-  const container = document.body;
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight / 2;
-
-  for (let i = 0; i < emojiCount; i++) {
-    const el = document.createElement('div');
-    el.style.position = 'fixed';
-    el.style.left = `${cx}px`;
-    el.style.top = `${cy}px`;
-    el.style.fontSize = `${1.5 + Math.random() * 2}rem`;
-    el.style.transform = 'translate(-50%, -50%)';
-    el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
-    container.appendChild(el);
-
-    const angle = Math.random() * Math.PI * 2;
-    const velocity = 8 + Math.random() * 12;
-
-    explosionObjects.push({
-      el, x: cx, y: cy,
-      vx: Math.cos(angle) * velocity,
-      vy: Math.sin(angle) * velocity,
-      gravity: 0.1 + Math.random() * 0.05,
-      rotation: (Math.random() - 0.5) * 20, rot: 0, opacity: 1
-    });
-  }
-
-  let frame = 0, maxFrames = 260;
-  function animate() {
-    explosionObjects.forEach(obj => {
-      obj.x += obj.vx; obj.y += obj.vy;
-      obj.vy += obj.gravity; obj.vx *= 0.99; obj.vy *= 0.99;
-      obj.rot += obj.rotation;
-      if (frame > maxFrames / 2) obj.opacity -= 1 / (maxFrames / 2);
-      obj.el.style.transform = `translate(${obj.x - cx}px, ${obj.y - cy}px) rotate(${obj.rot}deg)`;
-      obj.el.style.opacity = Math.max(0, obj.opacity);
-    });
-    frame++;
-    if (frame < maxFrames) requestAnimationFrame(animate);
-    else explosionObjects.forEach(obj => obj.el.remove());
-  }
-  requestAnimationFrame(animate);
-}
-
-// Wake lock restore on app becoming visible again
-document.addEventListener('visibilitychange', () => {
-  if (audioManager.audioCtx && audioManager.audioCtx.state === 'suspended') {
-    audioManager.unlockAudio();
-  }
-  if (document.visibilityState === 'visible' && document.querySelector('.stop-active')) {
-    requestWakeLock();
-  }
-});
